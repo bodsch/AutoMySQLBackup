@@ -329,11 +329,11 @@ files_postprocessing () {
 
   # -> CONFIG_mysql_dump_latest
   [[ "${CONFIG_mysql_dump_latest}" = "yes" ]] && {
+
+    dest_name="$(basename ${1} | cut -d _ -f 2)"
+
     if (( $flags & $flags_files_postprocessing_success_encrypt ))
     then
-
-      dest_name="basename ${1} | cut -d _ -f 2"
-
       if (( $CONFIG_dryrun )); then
         printf 'dry-running: cp -al %s.enc %s/latest/\n' "${1}" "${CONFIG_backup_dir}"
       else
@@ -344,11 +344,8 @@ files_postprocessing () {
       if (( $CONFIG_dryrun )); then
         printf 'dry-running: cp -al %s %s/latest/\n' "${1}" "${CONFIG_backup_dir}"
       else
-        # dest_name="basename ${1} | cut -d _ -f 2"
-        ln -f "${1}" "${CONFIG_backup_dir}/latest/${dest_name}${suffix}"
-
         # cp -al "${1}" "${CONFIG_backup_dir}"/latest/${dest_name}
-
+        ln -f "${1}" "${CONFIG_backup_dir}/latest/${dest_name}${suffix}"
         touch "${CONFIG_backup_dir}"/latest/state
       fi
     fi
