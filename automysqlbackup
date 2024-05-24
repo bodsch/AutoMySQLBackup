@@ -602,7 +602,7 @@ parse_configuration () {
   for i in "${CONFIG_table_exclude[@]}"; do
     r='^[^*.]+\.[^.]+$'; [[ "$i" =~ $r ]] || { printf 'The entry %s in CONFIG_table_exclude has a wrong format. Ignoring the entry.' "$i"; continue; }
     db=${i%.*}
-    table=${i#"$db".}
+    table=${i#"${db}".}
     r='\*'; [[ "$i" =~ $r ]] || { tmp[z++]="$i"; continue; }
     while read -r; do tmp[z++]="${db}.${REPLY}"; done < <($MYSQL "${mysql_opt[@]}" --batch --skip-column-names -e "select table_name from information_schema.tables where table_schema='${db}' and table_name like '${table//\*/%}';")
   done
@@ -708,7 +708,7 @@ process_dbs() {
   local subsubfolder
 
   # only activate differential backup for daily backups
-  [[ "x$subfolder" != "xdaily" ]] && activate_differential_backup=0 || activate_differential_backup=1
+  [[ "x${subfolder}" != "xdaily" ]] && activate_differential_backup=0 || activate_differential_backup=1
 
   if (( $multipledbs )); then
   # multiple dbs
@@ -731,7 +731,7 @@ process_dbs() {
   manifest_file="${CONFIG_backup_dir}/${subfolder}${subsubfolder}/Manifest"
   fname="${CONFIG_backup_dir}/${subfolder}${subsubfolder}/${prefix}${name}_${datetimestamp}${midfix}${extension}"
 
-  (( $CONFIG_debug )) && echo "DEBUG: process_dbs >> Setting manifest file to: ${manifest_file}"
+  (( ${CONFIG_debug} )) && echo "DEBUG: process_dbs >> Setting manifest file to: ${manifest_file}"
 
   if (( $multipledbs )); then
   # multiple databases
@@ -757,15 +757,15 @@ process_dbs() {
     let "filename_flags=0x00"
 
 #     ## -> get latest differential manifest entry for specified db
-#     if get_latest_manifest_entry_for_db "$db" 1; then
+#     if get_latest_manifest_entry_for_db "${db}" 1; then
 #     pid="${manifest_entry[2]}"
 #     # filename format: prefix_db_YYYY-MM-DD_HHhMMm_[A-Za-z0-9]{8}(.sql|.diff)(.gz|.bz2)(.enc)
 #     FileStub=${manifest_entry[0]%.@(sql|diff)*}
 #     FileExt=${manifest_entry[0]#"$FileStub"}
-#     re=".*\.enc.*";    [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_encrypted"
-#     re=".*\.gz.*";    [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_gz"
-#     re=".*\.bz2.*";    [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_bz2"
-#     re=".*\.diff.*";  [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_diff"
+#     re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_encrypted}"
+#     re=".*\.gz.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_gz}"
+#     re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_bz2}"
+#     re=".*\.diff.*";  [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_diff}"
 #     manifest_latest_diff_entry=("${manifest_entry[@]}")
 #     else  # no entries in manifest
 #     pid=0
@@ -774,15 +774,15 @@ process_dbs() {
 
     ## -> get latest master manifest entry for specified db
     # Create a differential backup if a master entry in the manifest exists, it isn't the day we do weekly master backups or the master file we fetched is already from today.
-    if get_latest_manifest_entry_for_db "$db" 0 && ( (( ${date_dayno_of_week} != ${CONFIG_do_weekly} )) || [[ "${manifest_entry[0]}" = *_$(date +%Y-%m-%d)_* ]] ); then
+    if get_latest_manifest_entry_for_db "${db}" 0 && ( (( ${date_dayno_of_week} != ${CONFIG_do_weekly} )) || [[ "${manifest_entry[0]}" = *_$(date +%Y-%m-%d)_* ]] ); then
     pid="${manifest_entry[2]}"
     # filename format: prefix_db_YYYY-MM-DD_HHhMMm_[A-Za-z0-9]{8}(.sql|.diff)(.gz|.bz2)(.enc)
     FileStub="${manifest_entry[0]%.@(sql|diff)*}"
     FileExt="${manifest_entry[0]#"$FileStub"}"
-    re=".*\.enc.*";    [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_encrypted"
-    re=".*\.gz.*";    [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_gz"
-    re=".*\.bz2.*";    [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_bz2"
-    re=".*\.diff.*";  [[ "$FileExt" =~ $re ]] && let "filename_flags|=$filename_flag_diff"
+    re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_encrypted}"
+    re=".*\.gz.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_gz}"
+    re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_bz2}"
+    re=".*\.diff.*";  [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_diff}"
     manifest_latest_master_entry=("${manifest_entry[@]}")
     else  # no entries in manifest
     pid=0
@@ -791,7 +791,7 @@ process_dbs() {
 
   fi
 
-  if [[ "x$CONFIG_mysql_dump_differential" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup )) && ((! ($filename_flags & $filename_flag_encrypted) )); then
+  if [[ "x$CONFIG_mysql_dump_differential" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup )) && ((! ($filename_flags & ${filename_flag_encrypted}) )); then
 
     # the master file is encrypted ... well this just shouldn't happen ^^ not going to decrypt or stuff like that ...at least not today :)
 
@@ -811,7 +811,7 @@ process_dbs() {
       $MYSQLDUMP "${opt[@]}" "$@" > "$cfname";
       ;;
     esac
-    add_manifest_entry "$manifest_file" "$cfname" "$pid" "$db" && parse_manifest "$manifest_file" && cp -al "$cfname" "${CONFIG_backup_dir}"/latest/ && echo "Generated master backup $cfname" && return 0 || return 1
+    add_manifest_entry "$manifest_file" "$cfname" "$pid" "${db}" && parse_manifest "$manifest_file" && cp -al "$cfname" "${CONFIG_backup_dir}"/latest/ && echo "Generated master backup $cfname" && return 0 || return 1
     # <- create master backup
     else
     cfname="$(mktemp "${fname%.sql}_"XXXXXXXX".diff${suffix}")"
@@ -820,34 +820,34 @@ process_dbs() {
     echo "Creating differential backup to ${manifest_entry[0]}:"
     case "${CONFIG_mysql_dump_compression}" in
     'gzip')
-      if (( $filename_flags & $filename_flag_gz )); then
+      if (( $filename_flags & ${filename_flag_gz} )); then
       diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | gzip_compression > "$cfname";
-      elif (( $filename_flags & $filename_flag_bz2 )); then
+      elif (( $filename_flags & ${filename_flag_bz2} )); then
       diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | gzip_compression > "$cfname";
       else
       diff "${manifest_latest_master_entry[0]}" <($MYSQLDUMP "${opt[@]}" "$@") | gzip_compression > "$cfname";
       fi
       ;;
     'bzip2')
-      if (( $filename_flags & $filename_flag_gz )); then
+      if (( $filename_flags & ${filename_flag_gz} )); then
       diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | bzip2_compression > "$cfname";
-      elif (( $filename_flags & $filename_flag_bz2 )); then
+      elif (( $filename_flags & ${filename_flag_bz2} )); then
       diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | bzip2_compression > "$cfname";
       else
       diff "${manifest_latest_master_entry[0]}" <($MYSQLDUMP "${opt[@]}" "$@") | bzip2_compression > "$cfname";
       fi
       ;;
     *)
-      if (( $filename_flags & $filename_flag_gz )); then
+      if (( $filename_flags & ${filename_flag_gz} )); then
       diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") > "$cfname";
-      elif (( $filename_flags & $filename_flag_bz2 )); then
+      elif (( $filename_flags & ${filename_flag_bz2} )); then
       diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") > "$cfname";
       else
       diff "${manifest_latest_master_entry[0]}" <($MYSQLDUMP "${opt[@]}" "$@") > "$cfname";
       fi
       ;;
     esac
-    add_manifest_entry "$manifest_file" "$cfname" "$pid" "$db" && parse_manifest "$manifest_file" && cp -al "$cfname" "${manifest_latest_master_entry[0]}" "${CONFIG_backup_dir}"/latest/ && echo "generated $cfname" && return 0 || return 1
+    add_manifest_entry "$manifest_file" "$cfname" "$pid" "${db}" && parse_manifest "$manifest_file" && cp -al "$cfname" "${manifest_latest_master_entry[0]}" "${CONFIG_backup_dir}"/latest/ && echo "generated $cfname" && return 0 || return 1
 
     fi
     # <- generate diff filename
@@ -910,7 +910,7 @@ activateIO() {
   # IO redirection for logging.
   # $1 = ${log_file}, $2 = ${log_errfile}
 
-  #(( $CONFIG_debug )) || {
+  #(( ${CONFIG_debug} )) || {
     touch "${log_file}"
     exec 6>&1        # Link file descriptor #6 with stdout. Saves stdout.
     exec > "${log_file}"    # stdout replaced with file ${log_file}.
@@ -1293,7 +1293,7 @@ parse_manifest() {
   local tmp_md5sum
   # array ( filename_1, md5sum_1, id_1[, rel_id_1] ), ... )
   # reserving 4 members for each entry, thus each filename entry in the array has array key 4(n-1)+1
-  (( $CONFIG_debug )) && echo ">>>>>>> Parsing manifest file: $1"
+  (( ${CONFIG_debug} )) && echo ">>>>>>> Parsing manifest file: $1"
   n=1
   [[ -s "$1" ]] &&
   while read line
@@ -1315,12 +1315,12 @@ parse_manifest() {
     check=$?
     case $check in
       1)
-        (( $CONFIG_debug )) && echo "File for manifest entry $line does not exist. Entry removed."
+        (( ${CONFIG_debug} )) && echo "File for manifest entry $line does not exist. Entry removed."
         continue # file doesn't exist - removed entry from manifest
         break
         ;;
       2)
-        (( $CONFIG_debug )) && echo "File for manifest entry $line does not exist. Failed to remove the entry."
+        (( ${CONFIG_debug} )) && echo "File for manifest entry $line does not exist. Failed to remove the entry."
         continue # file doesn't exist - tried to remove entry from manifest, but failed
         break
         ;;
@@ -1332,7 +1332,7 @@ parse_manifest() {
       if [[ "x${manifest_array[i]}" = "x${line_arr[0]}" ]]
       then
         # found entry with the same filename
-        (( $CONFIG_debug )) && echo "Found multiple entries with the same filename. Removing all but the first-found entry from manifest."
+        (( ${CONFIG_debug} )) && echo "Found multiple entries with the same filename. Removing all but the first-found entry from manifest."
         # remove all entries with this filename and add a new one based on the values of the item already in the array
         rm_manifest_entry_by_filename "$1" "${manifest_array[i]}" 1 && add_manifest_entry "$1" "${manifest_array[i]}" "${manifest_array[i+3]}"
         continue 2  # the original entry, to which we compared, is already in the manifest_array; no matter if this is resolved or not, we don't
@@ -1343,10 +1343,10 @@ parse_manifest() {
         if [[ ! -s "${line_arr[0]}" ]]
         then
           # empty file - don't start to compare md5sums ...
-          (( $CONFIG_debug )) && echo "Found empty file ${line_arr[0]}."
+          (( ${CONFIG_debug} )) && echo "Found empty file ${line_arr[0]}."
         else
-          (( $CONFIG_debug )) && echo "Found multiple entries with the same md5sum but different filename."
-          (( $CONFIG_debug )) && echo -e ">> fname_manifest:\t${manifest_array[i]}\t${manifest_array[i+1]}\n>> fname_line:\t\t${line_arr[0]}\t${line_arr[2]}"
+          (( ${CONFIG_debug} )) && echo "Found multiple entries with the same md5sum but different filename."
+          (( ${CONFIG_debug} )) && echo -e ">> fname_manifest:\t${manifest_array[i]}\t${manifest_array[i+1]}\n>> fname_line:\t\t${line_arr[0]}\t${line_arr[2]}"
           if [[ "x${line_arr[6]}" != "x0" ]]
           then
             if [[ "x${manifest_array[i+3]}" = "x${line_arr[6]}" ]]
@@ -1372,8 +1372,8 @@ parse_manifest() {
     ((n++))
   done < <(sort -t $'\t' -k"1" "$1")
 
-  (( $CONFIG_debug )) && echo "<<<<<<< # manifest entries: $((${#manifest_array[@]}/$fields))"
-  (( $CONFIG_debug )) && echo "<<<<<<< FINISHED"
+  (( ${CONFIG_debug} )) && echo "<<<<<<< # manifest entries: $((${#manifest_array[@]}/$fields))"
+  (( ${CONFIG_debug} )) && echo "<<<<<<< FINISHED"
   return 0
 }
 
@@ -1849,17 +1849,17 @@ method_backup () {
   then
     source "${CONFIG_configfile}"
   else
-    let "N |= $N_config_file_missing"
+    let "N |= ${N_config_file_missing}"
   fi
 
-  if (( $opt_flag_config_file ))
+  if (( ${opt_flag_config_file} ))
   then
     if [[ -r "${opt_config_file}" ]]
     then
       source "${opt_config_file}"
-      let "N |= $N_arg_conffile_parsed"
+      let "N |= ${N_arg_conffile_parsed}"
     else
-      let "N |= $N_arg_conffile_unreadable"
+      let "N |= ${N_arg_conffile_unreadable}"
     fi
   else
     let "N |= $N_too_many_args"
@@ -1875,7 +1875,7 @@ method_backup () {
   }
 
   export LC_ALL=C
-  PROGNAME=$(basename $0)
+  PROGNAME=$(basename "${0}")
   PATH=${PATH}:/usr/local/bin:/usr/bin:/bin:/usr/local/mysql/bin
   version=3.0
   fields=5 # manifest fields
@@ -1895,8 +1895,17 @@ method_backup () {
   parse_databases
 
   # debug output of variables
-  (( $CONFIG_debug )) && { echo; echo "# DEBUG: printing all current variables"; declare -p | egrep -o '.* (CONFIG_[a-z_]*|opt|mysql_opt|opt_dbstatus|opt_fullschema)=.*'; echo; }
-  (( $CONFIG_debug )) && { echo "DEBUG: before pre-backup"; ( IFS=,; echo "DEBUG: CONFIG_db_names '${CONFIG_db_names[*]}'" ); ( IFS=,; echo "DEBUG: CONFIG_db_month_names '${CONFIG_db_month_names[*]}'" );}
+  (( ${CONFIG_debug} )) && {
+    echo
+    echo "# DEBUG: printing all current variables"
+    declare -p | egrep -o '.* (CONFIG_[a-z_]*|opt|mysql_opt|opt_dbstatus|opt_fullschema)=.*'
+    echo
+  }
+  (( ${CONFIG_debug} )) && {
+    echo "DEBUG: before pre-backup"
+    ( IFS=,; echo "DEBUG: CONFIG_db_names '${CONFIG_db_names[*]}'" )
+    ( IFS=,; echo "DEBUG: CONFIG_db_month_names '${CONFIG_db_month_names[*]}'" )
+  }
 
 
   # END __PREPARE
@@ -1955,7 +1964,7 @@ method_backup () {
       echo "success!"
       backupfiles=( "${backupfiles[@]}" "${CONFIG_backup_dir}/backup_local_files/bcf_weekly_${datetimestamp}_${date_weekno}.tar" )
     else
-      let "E |= $E_backup_local_failed"
+      let "E |= ${E_backup_local_failed}"
       echo "failed!"
     fi
     echo
@@ -1972,7 +1981,7 @@ method_backup () {
     echo
 
     # monthly
-    if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || $date_day_of_month == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) )) && (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/fullschema/fullschema_monthly_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m_${date_month}.sql${suffix}"); ((! ${#f[@]})))
+    if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || ${date_day_of_month} == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) )) && (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/fullschema/fullschema_monthly_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m_${date_month}.sql${suffix}"); ((! ${#f[@]})))
     then
       fullschema "${CONFIG_backup_dir}/fullschema/fullschema_monthly_${datetimestamp}_${date_month}.sql"
       if (( $? == 0 ))
@@ -2038,66 +2047,74 @@ method_backup () {
   # <- dump full schema
 
   # -> dump status
-  if [[ "${CONFIG_mysql_dump_dbstatus}" = 'yes' ]]; then
+  if [[ "${CONFIG_mysql_dump_dbstatus}" = 'yes' ]]
+  then
     echo "======================================================================"
     echo "Dump status."
     echo
 
     # monthly
-    if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || $date_day_of_month == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) )) && (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/status/status_monthly_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m_${date_month}.txt${suffix}"); ((! ${#f[@]}))); then
+    if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || ${date_day_of_month} == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) )) && (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/status/status_monthly_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m_${date_month}.txt${suffix}"); ((! ${#f[@]})))
+    then
       dbstatus "${CONFIG_backup_dir}/status/status_monthly_${datetimestamp}_${date_month}.txt"
-      if (( $? == 0 )); then
-      echo "Rotating $(( ${CONFIG_rotation_monthly}/31 )) month backups for ${mdb}"
-      if (( "${CONFIG_dryrun}" )); then
-        find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_monthly}" -type f -name 'status_monthly*' -exec echo "dry-running: rm" {} \;
+      if (( $? == 0 ))
+      then
+        echo "Rotating $(( ${CONFIG_rotation_monthly}/31 )) month backups for ${mdb}"
+        if (( "${CONFIG_dryrun}" ))
+        then
+          find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_monthly}" -type f -name 'status_monthly*' -exec echo "dry-running: rm" {} \;
+        else
+          find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_monthly}" -type f -name 'status_monthly*' -exec rm {} \;
+        fi
+        files_postprocessing "${CONFIG_backup_dir}/status/status_monthly_${datetimestamp}_${date_month}.txt${suffix}"
+        tmp_flags=$?; var=; (( $tmp_flags & "${flags_files_postprocessing_success_encrypt}" )) && var=.enc
+        backupfiles=( "${backupfiles[@]}" "${CONFIG_backup_dir}/status/status_monthly_${datetimestamp}_${date_month}.txt${suffix}${var}" )
       else
-        find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_monthly}" -type f -name 'status_monthly*' -exec rm {} \;
-      fi
-      files_postprocessing "${CONFIG_backup_dir}/status/status_monthly_${datetimestamp}_${date_month}.txt${suffix}"
-      tmp_flags=$?; var=; (( $tmp_flags & "${flags_files_postprocessing_success_encrypt}" )) && var=.enc
-      backupfiles=( "${backupfiles[@]}" "${CONFIG_backup_dir}/status/status_monthly_${datetimestamp}_${date_month}.txt${suffix}${var}" )
-      else
-      let "E |= $E_dump_status_failed"
+        let "E |= ${E_dump_status_failed}"
       fi
     fi
 
     # weekly
-    if [[ ${CONFIG_do_weekly} != 0 && ${date_dayno_of_week} = ${CONFIG_do_weekly} ]] && (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/status/status_weekly_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m_${date_weekno}.txt${suffix}"); ((! ${#f[@]}))); then
+    if [[ ${CONFIG_do_weekly} != 0 && ${date_dayno_of_week} = ${CONFIG_do_weekly} ]] && (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/status/status_weekly_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m_${date_weekno}.txt${suffix}"); ((! ${#f[@]})))
+    then
       dbstatus "${CONFIG_backup_dir}/status/status_weekly_${datetimestamp}_${date_weekno}.txt"
-      if (( $? == 0 )); then
-      echo "Rotating $(( ${CONFIG_rotation_monthly}/31 )) month backups for ${mdb}"
-      if (( "${CONFIG_dryrun}" )); then
-        find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_weekly}" -type f -name 'status_weekly*' -exec echo "dry-running: rm" {} \;
+      if (( $? == 0 ))
+      then
+        echo "Rotating $(( ${CONFIG_rotation_monthly}/31 )) month backups for ${mdb}"
+        if (( "${CONFIG_dryrun}" ))
+        then
+          find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_weekly}" -type f -name 'status_weekly*' -exec echo "dry-running: rm" {} \;
+        else
+          find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_weekly}" -type f -name 'status_weekly*' -exec rm {} \;
+        fi
+        files_postprocessing "${CONFIG_backup_dir}/status/status_weekly_${datetimestamp}_${date_weekno}.txt${suffix}"
+        tmp_flags=$?; var=; (( $tmp_flags & "${flags_files_postprocessing_success_encrypt}" )) && var=.enc
+        backupfiles=( "${backupfiles[@]}" "${CONFIG_backup_dir}/status/status_weekly_${datetimestamp}_${date_weekno}.txt${suffix}${var}" )
       else
-        find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_weekly}" -type f -name 'status_weekly*' -exec rm {} \;
-      fi
-      files_postprocessing "${CONFIG_backup_dir}/status/status_weekly_${datetimestamp}_${date_weekno}.txt${suffix}"
-      tmp_flags=$?; var=; (( $tmp_flags & "${flags_files_postprocessing_success_encrypt}" )) && var=.enc
-      backupfiles=( "${backupfiles[@]}" "${CONFIG_backup_dir}/status/status_weekly_${datetimestamp}_${date_weekno}.txt${suffix}${var}" )
-      else
-      let "E |= $E_dump_status_failed"
+        let "E |= ${E_dump_status_failed}"
       fi
     fi
 
     # daily
     dbstatus "${CONFIG_backup_dir}/status/status_daily_${datetimestamp}_${date_day_of_week}.txt"
-    if (( $? == 0 )); then
+    if (( $? == 0 ))
+    then
       echo "Rotating $(( ${CONFIG_rotation_monthly}/31 )) month backups for ${mdb}"
-      if (( "${CONFIG_dryrun}" )); then
-      find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_daily}" -type f -name 'status_daily*' -exec echo "dry-running: rm" {} \;
+      if (( "${CONFIG_dryrun}" ))
+      then
+        find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_daily}" -type f -name 'status_daily*' -exec echo "dry-running: rm" {} \;
       else
-      find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_daily}" -type f -name 'status_daily*' -exec rm {} \;
+        find "${CONFIG_backup_dir}/status" -mtime +"${CONFIG_rotation_daily}" -type f -name 'status_daily*' -exec rm {} \;
       fi
       files_postprocessing "${CONFIG_backup_dir}/status/status_daily_${datetimestamp}_${date_day_of_week}.txt${suffix}"
       tmp_flags=$?; var=; (( $tmp_flags & "${flags_files_postprocessing_success_encrypt}" )) && var=.enc
       backupfiles=( "${backupfiles[@]}" "${CONFIG_backup_dir}/status/status_daily_${datetimestamp}_${date_day_of_week}.txt${suffix}${var}" )
     else
-      let "E |= $E_dump_status_failed"
+      let "E |= ${E_dump_status_failed}"
     fi
     echo
     echo "======================================================================"
     echo
-
   fi
   # <- dump status
 
@@ -2107,7 +2124,8 @@ method_backup () {
     echo "======================================================================"
 
     ## <- monthly backup, unique per month
-    if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || $date_day_of_month == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) )); then
+    if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || ${date_day_of_month} == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) ))
+    then
       echo "Monthly Backup ..."
       echo
 
@@ -2119,24 +2137,27 @@ method_backup () {
       rotation_divisor="31"
       rotation_string="month"
 
-      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]; then
-      for db in "${CONFIG_db_month_names[@]}"; do
-        echo "Monthly Backup of Database ( ${db} )"
-        (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
-        process_dbs "$subfolder" "$prefix" "$midfix" "$extension" "$rotation" "$rotation_divisor" "$rotation_string" 0 "$db"
-        echo ----------------------------------------------------------------------
-      done
+      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
+      then
+        for db in "${CONFIG_db_month_names[@]}"
+        do
+          echo "Monthly Backup of Database ( ${db} )"
+          (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 0 "${db}"
+          echo ----------------------------------------------------------------------
+        done
       else
         echo "Monthly backup of databases ( ${CONFIG_db_month_names[@]} )."
         (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
-        process_dbs "$subfolder" "$prefix" "$midfix" "$extension" "$rotation" "$rotation_divisor" "$rotation_string" 1 "${CONFIG_db_month_names[@]}"
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 1 "${CONFIG_db_month_names[@]}"
         echo "----------------------------------------------------------------------"
       fi
     fi
     ## <- monthly backup
 
     ## <- weekly backup, unique per week
-    if (( ${CONFIG_do_weekly} != 0 && ${date_dayno_of_week} == ${CONFIG_do_weekly} )); then
+    if (( ${CONFIG_do_weekly} != 0 && ${date_dayno_of_week} == ${CONFIG_do_weekly} ))
+    then
       echo "Weekly Backup ..."
       echo
 
@@ -2147,24 +2168,28 @@ method_backup () {
       rotation="${CONFIG_rotation_weekly}"
       rotation_divisor="7"
       rotation_string="week"
-      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]; then
-      for db in "${CONFIG_db_names[@]}"; do
-        echo "Weekly Backup of Database ( ${db} )"
-        (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
-        process_dbs "$subfolder" "$prefix" "$midfix" "$extension" "$rotation" "$rotation_divisor" "$rotation_string" 0 "$db"
-        echo "----------------------------------------------------------------------"
-      done
+
+      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
+      then
+        for db in "${CONFIG_db_names[@]}"
+        do
+          echo "Weekly Backup of Database ( ${db} )"
+          (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 0 "${db}"
+          echo "----------------------------------------------------------------------"
+        done
       else
-      echo "Weekly backup of databases ( ${CONFIG_db_names[@]} )."
-      (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
-        process_dbs "$subfolder" "$prefix" "$midfix" "$extension" "$rotation" "$rotation_divisor" "$rotation_string" 1 "${CONFIG_db_names[@]}"
-      echo "----------------------------------------------------------------------"
+        echo "Weekly backup of databases ( ${CONFIG_db_names[@]} )."
+        (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 1 "${CONFIG_db_names[@]}"
+        echo "----------------------------------------------------------------------"
       fi
     fi
     ## <- weekly backup
 
     ## -> daily backup, test (( 1 )) is always true, just creates a grouping for Kate, which can be closed ^^
-    if (( 1 )); then
+    if (( 1 ))
+    then
       echo "Daily Backup ..."
       echo
 
@@ -2172,20 +2197,23 @@ method_backup () {
       prefix="daily_"
       midfix="_${date_day_of_week}"
       extension=".sql"
+
       rotation="${CONFIG_rotation_daily}"
       rotation_divisor="1"
       rotation_string="day"
 
-      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]; then
-      for db in "${CONFIG_db_names[@]}"; do
-        echo "Daily Backup of Database ( ${db} )"
-        process_dbs "$subfolder" "$prefix" "$midfix" "$extension" "$rotation" "$rotation_divisor" "$rotation_string" 0 "$db"
-        echo "----------------------------------------------------------------------"
-      done
+      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
+      then
+        for db in "${CONFIG_db_names[@]}"
+        do
+          echo "Daily Backup of Database ( "${db}" )"
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 0 "${db}"
+          echo "----------------------------------------------------------------------"
+        done
       else
-      echo "Daily backup of databases ( ${CONFIG_db_names[@]} )."
-      process_dbs "$subfolder" "$prefix" "$midfix" "$extension" "$rotation" "$rotation_divisor" "$rotation_string" 1 "${CONFIG_db_names[@]}"
-      echo "----------------------------------------------------------------------"
+        echo "Daily backup of databases ( "${CONFIG_db_names[@]}" )."
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 1 "${CONFIG_db_names[@]}"
+        echo "----------------------------------------------------------------------"
       fi
     fi
     ## <- daily backup
@@ -2203,26 +2231,31 @@ method_backup () {
   # -> finished information
   echo "Total disk space used for backup storage..."
   echo "Size - Location"
-  echo `du -hs $OS_du_extra_option "${CONFIG_backup_dir}"`
+  echo $(du -hs ${OS_du_extra_option} "${CONFIG_backup_dir}")
   echo
   echo "======================================================================"
   # <- finished information
 
   # -> postbackup commands
-  if [[ "${CONFIG_postbackup}" ]];then
+  if [[ "${CONFIG_postbackup}" ]]
+  then
     echo "======================================================================"
     echo "Postbackup command output."
     echo
-    source ${CONFIG_postbackup}
+    source "${CONFIG_postbackup}"
     echo
     echo "======================================================================"
   fi
   # <- postbackup commands
 
-  if [[ -s "${log_errfile}" ]];then status=1; else status=0; fi
+  if [[ -s "${log_errfile}" ]]
+  then
+    status=1;
+  else
+    status=0
+  fi
 
   exit ${status}
-
 }
 
 # @return  variable method_list_manifest_entries_array
@@ -2234,24 +2267,43 @@ method_list_manifest_entries () {
   files_master=()
   files_manifest=()
   master_flags=0
-  let "filename_flag_encrypted=0x01"
-  let "filename_flag_gz=0x02"
-  let "filename_flag_bz2=0x04"
-  let "filename_flag_diff=0x08"
+  (( "filename_flag_encrypted=0x01" ))
+  (( "filename_flag_gz=0x02" ))
+  (( "filename_flag_bz2=0x04" ))
+  (( "filename_flag_diff=0x08" ))
 
   ##############################################################################################################
   # BEGIN __STARTUP
 
   load_default_config
 
-  if [[ -r "${CONFIG_configfile}" ]]; then source "${CONFIG_configfile}"; echo "Parsed config file \"${CONFIG_configfile}\""; else let "N |= $N_config_file_missing"; fi; echo
-  if (( $opt_flag_config_file )); then if [[ -r "${opt_config_file}" ]]; then source "${opt_config_file}"; let "N |= $N_arg_conffile_parsed"; else let "N |= $N_arg_conffile_unreadable"; fi; else let "N |= $N_too_many_args"; fi
+  if [[ -r "${CONFIG_configfile}" ]]
+  then
+    source "${CONFIG_configfile}"
+    echo "Parsed config file \"${CONFIG_configfile}\""
+  else
+    (( "N |= ${N_config_file_missing}" ))
+  fi
+  echo
+
+  if (( ${opt_flag_config_file} ))
+  then
+    if [[ -r "${opt_config_file}" ]]
+    then
+      source "${opt_config_file}"
+      (( "N |= ${N_arg_conffile_parsed}" ))
+    else
+      (( "N |= ${N_arg_conffile_unreadable}" ))
+    fi
+  else
+    (( "N |= $N_too_many_args"))
+  fi
 
   # load mysql commands
   mysql_commands
 
   export LC_ALL=C
-  PROGNAME=$(basename $0)
+#   PROGNAME=$(basename "${0}")
   PATH=${PATH}:/usr/local/bin:/usr/bin:/bin:/usr/local/mysql/bin
   version=3.0
   fields=5 # manifest fields
@@ -2262,113 +2314,145 @@ method_list_manifest_entries () {
 
   # BEGIN __MAIN
   unset manifest_files manifest_files_db i db
-  while IFS= read -r -d '' file; do
+
+  while IFS= read -r -d '' file
+  do
     db="${file#/var/backup/db/@(daily|monthly|weekly|latest)/}";
     db="${db%/Manifest}";
-    manifest_files_db[i]="$db"
+    manifest_files_db[i]="${db}"
     manifest_files[i++]="$file"
   done < <(find "${CONFIG_backup_dir}"/ -type f -name 'Manifest' -print0)
 
   extended_select 0 "Databases" "${manifest_files_db[@]}"
   declare -a selected_dbs=("${extended_select_return[@]}")
 
-  for db in "${selected_dbs[@]}"; do
+  for db in "${selected_dbs[@]}"
+  do
     selected_available_files=()
-    for ((i=0;i<"${#manifest_files_db[@]}";i++)); do
-      if [[ "x${manifest_files_db[i]}" = "x$db" ]]; then
-      selected_available_files[j++]="${manifest_files[i]}"
+    for ((i=0;i<"${#manifest_files_db[@]}";i++))
+    do
+      if [[ "x${manifest_files_db[i]}" = "x${db}" ]]
+      then
+        selected_available_files[j++]="${manifest_files[i]}"
       fi
     done
-    if (( "${#selected_available_files[@]}" > 0 )); then
-      extended_select 1 "$db" "${selected_available_files[@]}"
+
+    if (( "${#selected_available_files[@]}" > 0 ))
+    then
+      extended_select 1 "${db}" "${selected_available_files[@]}"
       declare -a selected_entries=("${extended_select_return[@]}")
-      if (( "${#selected_entries[@]}" > 0 )); then
-        for z in "${selected_entries[@]}"; do
+
+      if (( "${#selected_entries[@]}" > 0 ))
+      then
+        for z in "${selected_entries[@]}"
+        do
           parse_manifest "$z"
           list=()
           list_id=()
-          for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields)); do
-          if [[ "${manifest_array[i+3]}" != 0 ]]; then # only add differential backups
-            list=("${list[@]}" "${manifest_array[i]}")
-            list_id=("${list_id[@]}" "${manifest_array[i+3]}") # save rel_id, so we can retrieve the master backup file
-          fi
-          done
-          if (( "${#list[@]}" > 0 )); then
-          extended_select 1 "$z" "${list[@]}"
-          if (( "${#extended_select_return[@]}" > 0 )); then
-            for ((i=0;$i<"${#extended_select_return[@]}";i++)); do
-            if get_manifest_entry_by_id "${list_id[${extended_select_return_id[i]}]}"; then
-              files=("${files[@]}" "${extended_select_return[i]}")
-              files_master=("${files_master[@]}" "${manifest_entry[0]}")
-              files_manifest=("${files_manifest[@]}" "$z")
-            else
-              echo "no found master for id ${list_id[${extended_select_return_id[i]}]}"
+          for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
+          do
+            if [[ "${manifest_array[i+3]}" != 0 ]]
+            then # only add differential backups
+              list=("${list[@]}" "${manifest_array[i]}")
+              list_id=("${list_id[@]}" "${manifest_array[i+3]}") # save rel_id, so we can retrieve the master backup file
             fi
-            done
-          fi
+          done
+
+          if (( "${#list[@]}" > 0 ))
+          then
+            extended_select 1 "$z" "${list[@]}"
+            if (( "${#extended_select_return[@]}" > 0 ))
+            then
+              for ((i=0;$i<"${#extended_select_return[@]}";i++))
+              do
+                if get_manifest_entry_by_id "${list_id[${extended_select_return_id[i]}]}"
+                then
+                  files=("${files[@]}" "${extended_select_return[i]}")
+                  files_master=("${files_master[@]}" "${manifest_entry[0]}")
+                  files_manifest=("${files_manifest[@]}" "$z")
+                else
+                  echo "no found master for id ${list_id[${extended_select_return_id[i]}]}"
+                fi
+              done
+            fi
           fi
         done
       fi
     fi
   done
   # END _select_filenames
-  declare -a method_list_manifest_entries_array=("${files[@]}")
-  declare -a method_list_manifest_entries_array_master=("${files_master[@]}")
-  declare -a method_list_manifest_entries_array_manifest=("${files_manifest[@]}")
+
+#   declare -a method_list_manifest_entries_array=("${files[@]}")
+#   declare -a method_list_manifest_entries_array_master=("${files_master[@]}")
+#   declare -a method_list_manifest_entries_array_manifest=("${files_manifest[@]}")
 
   clear
   echo "You have selected the following files:"
-  for i in "${files[@]}"; do printf '>>> %s\n' "$i"; done
+  for i in "${files[@]}"
+  do
+    printf '>>> %s\n' "$i";
+  done
   echo
+
   actions=('diff to full' 'remove files (also from Manifest)')
   extended_select 0 "Actions" "${actions[@]}"
-  for action in "${extended_select_return[@]}"; do
+  for action in "${extended_select_return[@]}"
+  do
     case "$action" in
       'diff to full')
-        for ((l=0;$l<"${#files[@]}";l++)); do
+        for ((l=0;$l<"${#files[@]}";l++))
+        do
           # put the unpacking of the master file in here, so that in the case of multiple diffs with the same
           # master file don't cause the script to unpack the same master file multiple times
           master="${files_master[l]}"
           diff="${files[l]}"
           FileStub="${master%.@(sql|master)*}"
           FileExt="${master#"$FileStub"}"
-          re=".*\.enc.*";    [[ "$FileExt" =~ $re ]] && let "master_flags|=$filename_flag_encrypted"
-          re=".*\.gz.*";    [[ "$FileExt" =~ $re ]] && let "master_flags|=$filename_flag_gz"
-          re=".*\.bz2.*";    [[ "$FileExt" =~ $re ]] && let "master_flags|=$filename_flag_bz2"
-          re=".*\.diff.*";  [[ "$FileExt" =~ $re ]] && let "master_flags|=$filename_flag_diff"
-          if (( $master_flags & $filename_flag_gz )); then
-          declare -a testarray=("${to_rm[@]}")
-          if ! in_array "${master%.gz}"; then
-            gzip_compression -dc "$master" > "${master%.gz}"
-            to_rm=("${to_rm[@]}" "${master%.gz}")
-          fi
-          master="${master%.gz}"
-          elif (( $master_flags & $filename_flag_bz2 )); then
-          declare -a testarray=("${to_rm[@]}")
-          if ! in_array "${master%.bz2}"; then
-            bzip2_compression -dc "$master" > "${master%.bz2}"
-            to_rm=("${to_rm[@]}" "${master%.bz2}")
-          fi
-          master="${master%.bz2}"
+          re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_encrypted}" ))
+          re=".*\.gz.*";     [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_gz}" ))
+          re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_bz2}" ))
+          re=".*\.diff.*";   [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_diff}" ))
+          if (( ${master_flags} & ${filename_flag_gz} ))
+          then
+            declare -a testarray=("${to_rm[@]}")
+            if ! in_array "${master%.gz}"; then
+              gzip_compression -dc "$master" > "${master%.gz}"
+              to_rm=("${to_rm[@]}" "${master%.gz}")
+            fi
+            master="${master%.gz}"
+          elif (( ${master_flags} & ${filename_flag_bz2} ))
+          then
+            declare -a testarray=("${to_rm[@]}")
+            if ! in_array "${master%.bz2}"; then
+              bzip2_compression -dc "$master" > "${master%.bz2}"
+              to_rm=("${to_rm[@]}" "${master%.bz2}")
+            fi
+            master="${master%.bz2}"
           else
-          :
+            :
           fi
-          method_diff_to_full "$master" "$diff"
+          method_diff_to_full "$master" "${diff}"
           #printf '%s\n>>> master: %s\n>>> manifest: %s\n' "${files[l]}" "${files_master[l]}" "${files_manifest[l]}"
         done
+
         # cleanup all unpacked master files ... the unpacked diff files are cleaned up by method_diff_to_full
-        for i in "${to_rm[@]}"; do rm "$i"; done
-      ;;
+        for i in "${to_rm[@]}"
+        do
+          rm "$i";
+        done
+        ;;
       'remove files (also from Manifest)')
-        for ((l=0;$l<"${#files[@]}";l++)); do
-          if rm_manifest_entry_by_filename "${files_manifest[l]}" "${files[l]}" 1; then
-          rm "${files[l]}"
+        for ((l=0;$l<"${#files[@]}";l++))
+        do
+          if rm_manifest_entry_by_filename "${files_manifest[l]}" "${files[l]}" 1
+          then
+            rm "${files[l]}"
           fi
         done
-      ;;
+        ;;
       *)
         echo "Unrecognized option. This Should not happen! Error!"
-      ;;
+        ;;
     esac
   done
 
@@ -2378,7 +2462,7 @@ method_list_manifest_entries () {
 # @info:  Convert a differential backup file to a full one.
 # @param:  master_backup_file diff_backup_file
 method_diff_to_full() {
-  local diff full diff_flags master_flags to_rm
+  local diff diff_flags master_flags to_rm
   master="$1"
   diff="$2"
   diff_flags=0
@@ -2387,48 +2471,48 @@ method_diff_to_full() {
 
   FileStub="${diff%.@(sql|diff)*}"
   FileExt="${diff#"$FileStub"}"
-  re=".*\.enc.*";    [[ "$FileExt" =~ $re ]] && (( "diff_flags|=$filename_flag_encrypted" ))
-  re=".*\.gz.*";     [[ "$FileExt" =~ $re ]] && (( "diff_flags|=$filename_flag_gz" ))
-  re=".*\.bz2.*";    [[ "$FileExt" =~ $re ]] && (( "diff_flags|=$filename_flag_bz2" ))
-  re=".*\.diff.*";   [[ "$FileExt" =~ $re ]] && (( "diff_flags|=$filename_flag_diff" ))
+  re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && (( "diff_flags|=${filename_flag_encrypted}" ))
+  re=".*\.gz.*";     [[ "${FileExt}" =~ $re ]] && (( "diff_flags|=${filename_flag_gz}" ))
+  re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && (( "diff_flags|=${filename_flag_bz2}" ))
+  re=".*\.diff.*";   [[ "${FileExt}" =~ $re ]] && (( "diff_flags|=${filename_flag_diff}" ))
   FileStub="${master%.@(sql|master)*}"
   FileExt="${master#"$FileStub"}"
-  re=".*\.enc.*";    [[ "$FileExt" =~ $re ]] && (( "master_flags|=$filename_flag_encrypted" ))
-  re=".*\.gz.*";     [[ "$FileExt" =~ $re ]] && (( "master_flags|=$filename_flag_gz" ))
-  re=".*\.bz2.*";    [[ "$FileExt" =~ $re ]] && (( "master_flags|=$filename_flag_bz2" ))
-  re=".*\.diff.*";   [[ "$FileExt" =~ $re ]] && (( "master_flags|=$filename_flag_diff" ))
+  re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_encrypted}" ))
+  re=".*\.gz.*";     [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_gz}" ))
+  re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_bz2}" ))
+  re=".*\.diff.*";   [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_diff}" ))
 
   # TODO: Differential backup with encryption is not yet implemented!
-  if (( $diff_flags & $filename_flag_encrypted ))
+  if (( ${diff_flags} & ${filename_flag_encrypted} ))
   then
     : #decrypt it
   fi
 
-  if (( $master_flags & $filename_flag_encrypted ))
+  if (( ${master_flags} & ${filename_flag_encrypted} ))
   then
     : #decrypt it
   fi
 
-  if (( $diff_flags & $filename_flag_gz ))
+  if (( ${diff_flags} & ${filename_flag_gz} ))
   then
-    gzip_compression -dc "$diff" > "${diff%.gz}"
+    gzip_compression -dc "${diff}" > "${diff%.gz}"
     to_rm=("${to_rm[@]}" "${diff%.gz}")
     diff="${diff%.gz}"
-  elif (( $diff_flags & $filename_flag_bz2 ))
+  elif (( ${diff_flags} & ${filename_flag_bz2} ))
   then
-    bzip2_compression -dc "$diff" > "${diff%.bz2}"
+    bzip2_compression -dc "${diff}" > "${diff%.bz2}"
     to_rm=("${to_rm[@]}" "${diff%.bz2}")
     diff="${diff%.bz2}"
   else
     :
   fi
 
-  if (( $master_flags & $filename_flag_gz ))
+  if (( ${master_flags} & ${filename_flag_gz} ))
   then
     gzip_compression -dc "$master" > "${master%.gz}"
     to_rm=("${to_rm[@]}" "${master%.gz}")
     master="${master%.gz}"
-  elif (( $master_flags & $filename_flag_bz2 ))
+  elif (( ${master_flags} & ${filename_flag_bz2} ))
   then
     bzip2_compression -dc "$master" > "${master%.bz2}"
     to_rm=("${to_rm[@]}" "${master%.bz2}")
@@ -2437,7 +2521,7 @@ method_diff_to_full() {
     :
   fi
 
-  patch "$master" "$diff" -o "${diff/diff/sql}"
+  patch "$master" "${diff}" -o "${diff/diff/sql}"
 
   # cleanup
   for i in "${to_rm[@]}"
@@ -2452,9 +2536,10 @@ method_diff_to_full() {
 # BEGIN __main
 
 NO_ARGS=0
-E_OPTERROR=85
+# E_OPTERROR=85
 
-if (( $# == ${NO_ARGS} )); then   # Script invoked with no command-line args?
+if (( $# == ${NO_ARGS} ))
+then   # Script invoked with no command-line args?
   method_backup
 fi
 
@@ -2478,7 +2563,7 @@ do
       opt_flag_list_manifest_entries=1
       ;;
     h)
-      echo "Usage `basename $0` options -cblh"
+      echo "Usage $(basename "${0}") options -cblh"
       echo -e "-c CONFIG_FILE\tSpecify optional config file."
       echo -e "-b\tUse backup method."
       echo -e "-l\tList manifest entries."
@@ -2510,7 +2595,9 @@ shift $((${OPTIND} - 1))
 opt_flags=( "${!opt_flag_@}" )  # array of all set variables starting with opt_flag_
 if (( $# == 1 )) && (( ${#opt_flags[@]} == 0 ))
 then
-  opt_config_file="$1"; opt_flag_config_file=1; method_backup
+  opt_config_file="$1"
+  opt_flag_config_file=1
+  method_backup
 elif (( $# == 0 )) && (( ${#opt_flags[@]} == 0 ))
 then
   method_backup
