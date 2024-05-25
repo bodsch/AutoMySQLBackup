@@ -391,17 +391,19 @@ files_postprocessing () {
     if (( "${flags}" & "${flags_files_postprocessing_success_encrypt}" ))
     then
       if (( "${CONFIG_dryrun}" )); then
-        printf 'dry-running: cp -al %s.enc %s/latest/\n' "${1}" "${CONFIG_backup_dir}"
+        printf 'dry-running: cp -al %s.enc %s/latest/%s/%s.enc\n' "${1}" "${CONFIG_backup_dir}" "${dest_name}" "${suffix}"
       else
         # cp -al "${1}${suffix}.enc" "${CONFIG_backup_dir}"/latest/
         ln -f "${1}${suffix}.enc" "${CONFIG_backup_dir}/latest/${dest_name}${suffix}.enc"
       fi
-      else
+    else
       if (( "${CONFIG_dryrun}" )); then
-        printf 'dry-running: cp -al %s %s/latest/\n' "${1}" "${CONFIG_backup_dir}"
+        printf 'dry-running: ln -f %s %s/latest/%s/%s\n' "${1}" "${CONFIG_backup_dir}" "${dest_name}" "${suffix}"
       else
-        # cp -al "${1}" "${CONFIG_backup_dir}"/latest/${dest_name}
-        ln -f "${1}" "${CONFIG_backup_dir}/latest/${dest_name}${suffix}"
+        if [[ -n "${CONFIG_mysql_dump_latest_clean_filenames}" ]] && [[ "${CONFIG_mysql_dump_latest_clean_filenames}" != 'yes' ]]
+        then
+          ln -f "${1}" "${CONFIG_backup_dir}/latest/${dest_name}${suffix}"
+        fi
 
         # touch state file for monitoring
         touch "${CONFIG_backup_dir}"/latest/state
