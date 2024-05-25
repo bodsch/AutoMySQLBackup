@@ -1868,13 +1868,13 @@ method_backup () {
         do
           echo "Weekly Backup of Database ( ${db} )"
           (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 0 "${db}"
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
           echo "----------------------------------------------------------------------"
         done
       else
         echo "Weekly backup of databases ( ${CONFIG_db_names[@]} )."
         (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 1 "${CONFIG_db_names[@]}"
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_names[@]}"
         echo "----------------------------------------------------------------------"
       fi
     fi
@@ -1900,12 +1900,12 @@ method_backup () {
         for db in "${CONFIG_db_names[@]}"
         do
           echo "Daily Backup of Database ( "${db}" )"
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 0 "${db}"
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
           echo "----------------------------------------------------------------------"
         done
       else
         echo "Daily backup of databases ( "${CONFIG_db_names[@]}" )."
-        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 1 "${CONFIG_db_names[@]}"
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_names[@]}"
         echo "----------------------------------------------------------------------"
       fi
     fi
