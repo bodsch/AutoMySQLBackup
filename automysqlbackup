@@ -583,6 +583,7 @@ parse_configuration () {
     opt_fullschema=( "${opt_fullschema[@]}" "--max_allowed_packet=${CONFIG_mysql_dump_max_allowed_packet}" )
   }
   [[ "${CONFIG_mysql_dump_socket}" ]]      && {
+    CONFIG_mysql_dump_port=
     opt=( "${opt[@]}" "--socket=${CONFIG_mysql_dump_socket}" )
     mysql_opt=( "${mysql_opt[@]}" "--socket=${CONFIG_mysql_dump_socket}" )
     opt_fullschema=( "${opt_fullschema[@]}" "--socket=${CONFIG_mysql_dump_socket}" )
