@@ -791,136 +791,136 @@ process_dbs() {
   manifest_file="${CONFIG_backup_dir}/${subfolder}${subsubfolder}/Manifest"
   fname="${CONFIG_backup_dir}/${subfolder}${subsubfolder}/${prefix}${name}_${datetimestamp}${midfix}${extension}"
 
-  (( ${CONFIG_debug} )) && echo "DEBUG: process_dbs >> Setting manifest file to: ${manifest_file}"
+  # (( ${CONFIG_debug} )) && echo "DEBUG: process_dbs >> Setting manifest file to: ${manifest_file}"
 
   if (( ${multipledbs} ))
   then
     # multiple databases
     db="all-databases"
-  else
+#   else
     # single db
     db="${1}"
   fi
 
-  if [[ "x${CONFIG_mysql_dump_differential}" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup ))
-  then
-
-    unset manifest_entry manifest_entry_to_check
-
-    echo "## Reading in Manifest file"
-    parse_manifest "${manifest_file}"
-
-    echo
-    echo "Number of manifest entries: $(num_manifest_entries)"
-    echo
-
-    # -> generate diff file
-    let "filename_flags=0x00"
-
-#     ## -> get latest differential manifest entry for specified db
-#     if get_latest_manifest_entry_for_db "${db}" 1; then
-#     pid="${manifest_entry[2]}"
-#     # filename format: prefix_db_YYYY-MM-DD_HHhMMm_[A-Za-z0-9]{8}(.sql|.diff)(.gz|.bz2)(.enc)
-#     FileStub=${manifest_entry[0]%.@(sql|diff)*}
-#     FileExt=${manifest_entry[0]#"$FileStub"}
-#     re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_encrypted}"
-#     re=".*\.gz.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_gz}"
-#     re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_bz2}"
-#     re=".*\.diff.*";  [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_diff}"
-#     manifest_latest_diff_entry=("${manifest_entry[@]}")
-#     else  # no entries in manifest
-#     pid=0
-#     fi
-#     ## <- get latest differential manifest entry for specified db
-
-    ## -> get latest master manifest entry for specified db
-    # Create a differential backup if a master entry in the manifest exists, it isn't the day we do weekly master backups or the master file we fetched is already from today.
-    if get_latest_manifest_entry_for_db "${db}" 0 && ( (( ${date_dayno_of_week} != ${CONFIG_do_weekly} )) || [[ "${manifest_entry[0]}" = *_$(date +%Y-%m-%d)_* ]] )
-    then
-      pid="${manifest_entry[2]}"
-      # filename format: prefix_db_YYYY-MM-DD_HHhMMm_[A-Za-z0-9]{8}(.sql|.diff)(.gz|.bz2)(.enc)
-      FileStub="${manifest_entry[0]%.@(sql|diff)*}"
-      FileExt="${manifest_entry[0]#"$FileStub"}"
-      re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_encrypted}"
-      re=".*\.gz.*";     [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_gz}"
-      re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_bz2}"
-      re=".*\.diff.*";   [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_diff}"
-      manifest_latest_master_entry=("${manifest_entry[@]}")
-    else  # no entries in manifest
-      pid=0
-    fi
-    ## <- get latest master manifest entry for specified db
-  fi
-
-  if [[ "x${CONFIG_mysql_dump_differential}" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup )) && ((! ($filename_flags & ${filename_flag_encrypted}) ))
-  then
-    # the master file is encrypted ... well this just shouldn't happen ^^ not going to decrypt or stuff like that ...at least not today :)
-    if [[ "x${pid}" = "x0" ]]
-    then
-      # -> create master backup
-      cfname="$(mktemp "${fname%.sql}_XXXXXXXX.sql${suffix}")"
-      uid="${cfname%.@(diff|sql)*}"
-      uid="${uid:-8:8}"
-
-      case "${CONFIG_mysql_dump_compression}" in
-        'gzip')
-          ${MYSQLDUMP} "${opt[@]}" "${@}" | gzip_compression > "${cfname}";
-          ;;
-        'bzip2')
-          ${MYSQLDUMP} "${opt[@]}" "${@}" | bzip2_compression > "${cfname}";
-          ;;
-        *)
-          ${MYSQLDUMP} "${opt[@]}" "${@}" > "${cfname}";
-          ;;
-      esac
-      add_manifest_entry "${manifest_file}" "${cfname}" "${pid}" "${db}" && parse_manifest "${manifest_file}" && cp -al "${cfname}" "${CONFIG_backup_dir}"/latest/ && echo "Generated master backup ${cfname}" && return 0 || return 1
-      # <- create master backup
-    else
-      cfname="$(mktemp "${fname%.sql}_XXXXXXXX.diff${suffix}")"
-      uid="${cfname%.@(diff|sql)*}"
-      uid=${uid:-8:8}
-      echo "Creating differential backup to ${manifest_entry[0]}:"
-
-      case "${CONFIG_mysql_dump_compression}" in
-        'gzip')
-          if (( $filename_flags & ${filename_flag_gz} ))
-          then
-            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
-          elif (( $filename_flags & ${filename_flag_bz2} ))
-          then
-            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
-          else
-            diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
-          fi
-          ;;
-        'bzip2')
-          if (( $filename_flags & ${filename_flag_gz} ))
-          then
-            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
-          elif (( $filename_flags & ${filename_flag_bz2} ))
-          then
-            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
-          else
-            diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
-          fi
-          ;;
-        *)
-          if (( $filename_flags & ${filename_flag_gz} ))
-          then
-            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
-          elif (( $filename_flags & ${filename_flag_bz2} ))
-          then
-            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
-          else
-            diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
-          fi
-          ;;
-      esac
-      add_manifest_entry "${manifest_file}" "${cfname}" "${pid}" "${db}" && parse_manifest "${manifest_file}" && cp -al "${cfname}" "${manifest_latest_master_entry[0]}" "${CONFIG_backup_dir}"/latest/ && echo "generated ${cfname}" && return 0 || return 1
-    fi
-    # <- generate diff filename
-
-  else
+  # if [[ "x${CONFIG_mysql_dump_differential}" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup ))
+  # then
+  #
+  #   unset manifest_entry manifest_entry_to_check
+  #
+  #   # echo "## Reading in Manifest file"
+  #   # parse_manifest "${manifest_file}"
+  #   #
+  #   # echo
+  #   # echo "Number of manifest entries: $(num_manifest_entries)"
+  #   # echo
+  #
+  #   # -> generate diff file
+  #   let "filename_flags=0x00"
+  #
+# #     ## -> get latest differential manifest entry for specified db
+# #     if get_latest_manifest_entry_for_db "${db}" 1; then
+# #     pid="${manifest_entry[2]}"
+# #     # filename format: prefix_db_YYYY-MM-DD_HHhMMm_[A-Za-z0-9]{8}(.sql|.diff)(.gz|.bz2)(.enc)
+# #     FileStub=${manifest_entry[0]%.@(sql|diff)*}
+# #     FileExt=${manifest_entry[0]#"$FileStub"}
+# #     re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_encrypted}"
+# #     re=".*\.gz.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_gz}"
+# #     re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_bz2}"
+# #     re=".*\.diff.*";  [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_diff}"
+# #     manifest_latest_diff_entry=("${manifest_entry[@]}")
+# #     else  # no entries in manifest
+# #     pid=0
+# #     fi
+# #     ## <- get latest differential manifest entry for specified db
+  #
+  #   ## -> get latest master manifest entry for specified db
+  #   # Create a differential backup if a master entry in the manifest exists, it isn't the day we do weekly master backups or the master file we fetched is already from today.
+  #   if get_latest_manifest_entry_for_db "${db}" 0 && ( (( ${date_dayno_of_week} != ${CONFIG_do_weekly} )) || [[ "${manifest_entry[0]}" = *_$(date +%Y-%m-%d)_* ]] )
+  #   then
+  #     pid="${manifest_entry[2]}"
+  #     # filename format: prefix_db_YYYY-MM-DD_HHhMMm_[A-Za-z0-9]{8}(.sql|.diff)(.gz|.bz2)(.enc)
+  #     FileStub="${manifest_entry[0]%.@(sql|diff)*}"
+  #     FileExt="${manifest_entry[0]#"$FileStub"}"
+  #     re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_encrypted}"
+  #     re=".*\.gz.*";     [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_gz}"
+  #     re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_bz2}"
+  #     re=".*\.diff.*";   [[ "${FileExt}" =~ $re ]] && let "filename_flags|=${filename_flag_diff}"
+  #     manifest_latest_master_entry=("${manifest_entry[@]}")
+  #   else  # no entries in manifest
+  #     pid=0
+  #   fi
+  #   ## <- get latest master manifest entry for specified db
+  # fi
+  #
+  # if [[ "x${CONFIG_mysql_dump_differential}" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup )) && ((! ($filename_flags & ${filename_flag_encrypted}) ))
+  # then
+  #   # the master file is encrypted ... well this just shouldn't happen ^^ not going to decrypt or stuff like that ...at least not today :)
+  #   if [[ "x${pid}" = "x0" ]]
+  #   then
+  #     # -> create master backup
+  #     cfname="$(mktemp "${fname%.sql}_XXXXXXXX.sql${suffix}")"
+  #     uid="${cfname%.@(diff|sql)*}"
+  #     uid="${uid:-8:8}"
+  #
+  #     case "${CONFIG_mysql_dump_compression}" in
+  #       'gzip')
+  #         ${MYSQLDUMP} "${opt[@]}" "${@}" | gzip_compression > "${cfname}";
+  #         ;;
+  #       'bzip2')
+  #         ${MYSQLDUMP} "${opt[@]}" "${@}" | bzip2_compression > "${cfname}";
+  #         ;;
+  #       *)
+  #         ${MYSQLDUMP} "${opt[@]}" "${@}" > "${cfname}";
+  #         ;;
+  #     esac
+  #     # add_manifest_entry "${manifest_file}" "${cfname}" "${pid}" "${db}" && parse_manifest "${manifest_file}" && cp -al "${cfname}" "${CONFIG_backup_dir}"/latest/ && echo "Generated master backup ${cfname}" && return 0 || return 1
+  #     # <- create master backup
+  #   else
+  #     cfname="$(mktemp "${fname%.sql}_XXXXXXXX.diff${suffix}")"
+  #     uid="${cfname%.@(diff|sql)*}"
+  #     uid=${uid:-8:8}
+  #     echo "Creating differential backup to ${manifest_entry[0]}:"
+  #
+  #     case "${CONFIG_mysql_dump_compression}" in
+  #       'gzip')
+  #         if (( $filename_flags & ${filename_flag_gz} ))
+  #         then
+  #           diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
+  #         elif (( $filename_flags & ${filename_flag_bz2} ))
+  #         then
+  #           diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
+  #         else
+  #           diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
+  #         fi
+  #         ;;
+  #       'bzip2')
+  #         if (( $filename_flags & ${filename_flag_gz} ))
+  #         then
+  #           diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
+  #         elif (( $filename_flags & ${filename_flag_bz2} ))
+  #         then
+  #           diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
+  #         else
+  #           diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
+  #         fi
+  #         ;;
+  #       *)
+  #         if (( $filename_flags & ${filename_flag_gz} ))
+  #         then
+  #           diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
+  #         elif (( $filename_flags & ${filename_flag_bz2} ))
+  #         then
+  #           diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
+  #         else
+  #           diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
+  #         fi
+  #         ;;
+  #     esac
+  #     add_manifest_entry "${manifest_file}" "${cfname}" "${pid}" "${db}" && parse_manifest "${manifest_file}" && cp -al "${cfname}" "${manifest_latest_master_entry[0]}" "${CONFIG_backup_dir}"/latest/ && echo "generated ${cfname}" && return 0 || return 1
+  #   fi
+  #   # <- generate diff filename
+  #
+  # else
     cfname="${fname}${suffix}"
     if (( "${CONFIG_dryrun}" ))
     then
@@ -952,7 +952,7 @@ process_dbs() {
           ;;
       esac
     fi
-  fi
+  # fi
 
   if (( $ret == 0 ))
   then
@@ -1592,7 +1592,7 @@ method_backup () {
   (( ${CONFIG_debug} )) && {
     echo
     echo "# DEBUG: printing all current variables"
-    declare -p | egrep -o '.* (CONFIG_[a-z_]*|opt|mysql_opt|opt_dbstatus|opt_fullschema)=.*'
+    declare -p | grep -E -o '.* (CONFIG_[a-z_]*|opt|mysql_opt|opt_dbstatus|opt_fullschema)=.*'
     echo
   }
   (( ${CONFIG_debug} )) && {
@@ -1813,107 +1813,107 @@ method_backup () {
 
 
   # -> BACKUP DATABASES
-    echo "Backup Start Time `date`"
-    echo "======================================================================"
+  echo "Backup Start Time `date`"
+  echo "======================================================================"
 
-    ## <- monthly backup, unique per month
-    if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || ${date_day_of_month} == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) ))
-    then
-      echo "Monthly Backup ..."
-      echo
-
-      subfolder="monthly"
-      prefix="monthly_"
-      midfix="_${date_month}"
-      extension=".sql"
-      rotation="${CONFIG_rotation_monthly}"
-      rotation_divisor="31"
-      rotation_string="month"
-
-      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
-      then
-        for db in "${CONFIG_db_month_names[@]}"
-        do
-          echo "Monthly Backup of Database ( ${db} )"
-          (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
-          echo ----------------------------------------------------------------------
-        done
-      else
-        echo "Monthly backup of databases ( ${CONFIG_db_month_names[@]} )."
-        (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
-        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_month_names[@]}"
-        echo "----------------------------------------------------------------------"
-      fi
-    fi
-    ## <- monthly backup
-
-    ## <- weekly backup, unique per week
-    if (( ${CONFIG_do_weekly} != 0 && ${date_dayno_of_week} == ${CONFIG_do_weekly} ))
-    then
-      echo "Weekly Backup ..."
-      echo
-
-      subfolder="weekly"
-      prefix="weekly_"
-      midfix="_${date_weekno}"
-      extension=".sql"
-      rotation="${CONFIG_rotation_weekly}"
-      rotation_divisor="7"
-      rotation_string="week"
-
-      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
-      then
-        for db in "${CONFIG_db_names[@]}"
-        do
-          echo "Weekly Backup of Database ( ${db} )"
-          (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
-          echo "----------------------------------------------------------------------"
-        done
-      else
-        echo "Weekly backup of databases ( ${CONFIG_db_names[@]} )."
-        (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_names[@]}"
-        echo "----------------------------------------------------------------------"
-      fi
-    fi
-    ## <- weekly backup
-
-    ## -> daily backup, test (( 1 )) is always true, just creates a grouping for Kate, which can be closed ^^
-    if (( 1 ))
-    then
-      echo "Daily Backup ..."
-      echo
-
-      subfolder="daily"
-      prefix="daily_"
-      midfix="_${date_day_of_week}"
-      extension=".sql"
-
-      rotation="${CONFIG_rotation_daily}"
-      rotation_divisor="1"
-      rotation_string="day"
-
-      if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
-      then
-        for db in "${CONFIG_db_names[@]}"
-        do
-          echo "Daily Backup of Database ( "${db}" )"
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
-          echo "----------------------------------------------------------------------"
-        done
-      else
-        echo "Daily backup of databases ( "${CONFIG_db_names[@]}" )."
-        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_names[@]}"
-        echo "----------------------------------------------------------------------"
-      fi
-    fi
-    ## <- daily backup
-
+  ## <- monthly backup, unique per month
+  if (( ${CONFIG_do_monthly} != 0 && (${date_day_of_month} == ${CONFIG_do_monthly} || ${date_day_of_month} == "${date_lastday_of_this_month}" && "${date_lastday_of_this_month}" < ${CONFIG_do_monthly}) ))
+  then
+    echo "Monthly Backup ..."
     echo
-    echo "Backup End Time `date`"
-    echo "======================================================================"
+
+    subfolder="monthly"
+    prefix="monthly_"
+    midfix="_${date_month}"
+    extension=".sql"
+    rotation="${CONFIG_rotation_monthly}"
+    rotation_divisor="31"
+    rotation_string="month"
+
+    if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
+    then
+      for db in "${CONFIG_db_month_names[@]}"
+      do
+        echo "Monthly Backup of Database ( ${db} )"
+        (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
+        echo ----------------------------------------------------------------------
+      done
+    else
+      echo "Monthly backup of databases ( ${CONFIG_db_month_names[@]} )."
+      (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
+      process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_month_names[@]}"
+      echo "----------------------------------------------------------------------"
+    fi
+  fi
+  ## <- monthly backup
+
+  ## <- weekly backup, unique per week
+  if (( ${CONFIG_do_weekly} != 0 && ${date_dayno_of_week} == ${CONFIG_do_weekly} ))
+  then
+    echo "Weekly Backup ..."
+    echo
+
+    subfolder="weekly"
+    prefix="weekly_"
+    midfix="_${date_weekno}"
+    extension=".sql"
+    rotation="${CONFIG_rotation_weekly}"
+    rotation_divisor="7"
+    rotation_string="week"
+
+    if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
+    then
+      for db in "${CONFIG_db_names[@]}"
+      do
+        echo "Weekly Backup of Database ( ${db} )"
+        (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
+        echo "----------------------------------------------------------------------"
+      done
+    else
+      echo "Weekly backup of databases ( ${CONFIG_db_names[@]} )."
+      (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_names[@]}"
+      echo "----------------------------------------------------------------------"
+    fi
+  fi
+  ## <- weekly backup
+
+  ## -> daily backup, test (( 1 )) is always true, just creates a grouping for Kate, which can be closed ^^
+  if (( 1 ))
+  then
+    echo "Daily Backup ..."
+    echo
+
+    subfolder="daily"
+    prefix="daily_"
+    midfix="_${date_day_of_week}"
+    extension=".sql"
+
+    rotation="${CONFIG_rotation_daily}"
+    rotation_divisor="1"
+    rotation_string="day"
+
+    if [[ "${CONFIG_mysql_dump_use_separate_dirs}" = "yes" ]]
+    then
+      for db in "${CONFIG_db_names[@]}"
+      do
+        echo "Daily Backup of Database ( "${db}" )"
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
+        echo "----------------------------------------------------------------------"
+      done
+    else
+      echo "Daily backup of databases ( "${CONFIG_db_names[@]}" )."
+      process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_names[@]}"
+      echo "----------------------------------------------------------------------"
+    fi
+  fi
+  ## <- daily backup
+
+  echo
+  echo "Backup End Time `date`"
+  echo "======================================================================"
   # <- BACKUP DATABASES
 
 
