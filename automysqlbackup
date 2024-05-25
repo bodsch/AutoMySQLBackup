@@ -1836,13 +1836,13 @@ method_backup () {
         do
           echo "Monthly Backup of Database ( ${db} )"
           (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${db}/${prefix}${db}_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) && continue
-          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 0 "${db}"
+          process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 0 "${db}"
           echo ----------------------------------------------------------------------
         done
       else
         echo "Monthly backup of databases ( ${CONFIG_db_month_names[@]} )."
         (shopt -s nullglob dotglob; f=("${CONFIG_backup_dir}/${subfolder}/${prefix}all-databases_${date_stamp}_"[0-9][0-9]"h"[0-9][0-9]"m${midfix}${extension}${suffix}"); ((${#f[@]}))) &&
-        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation}_divisor" "${rotation}_string" 1 "${CONFIG_db_month_names[@]}"
+        process_dbs "${subfolder}" "${prefix}" "${midfix}" "${extension}" "${rotation}" "${rotation_divisor}" "${rotation_string}" 1 "${CONFIG_db_month_names[@]}"
         echo "----------------------------------------------------------------------"
       fi
     fi
