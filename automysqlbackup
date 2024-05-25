@@ -55,7 +55,8 @@ shopt -s extglob
 # @info:  Default configuration options.
 # @deps:  (none)
 load_default_config() {
-  CONFIG_dryrun=''
+  CONFIG_dryrun='0'
+  CONFIG_debug='0'
   CONFIG_configfile="/etc/automysqlbackup/automysqlbackup.conf"
   CONFIG_backup_dir='/var/backup/db'
   CONFIG_multicore='yes'
@@ -74,7 +75,7 @@ load_default_config() {
   CONFIG_mysql_dump_socket=''
   CONFIG_mysql_dump_create_database='no'
   CONFIG_mysql_dump_use_separate_dirs='yes'
-  CONFIG_mysql_dump_compression='gzip'
+  CONFIG_mysql_dump_compression='bzip2'
   CONFIG_mysql_dump_commcomp='no'
   CONFIG_mysql_dump_latest='no'
   CONFIG_mysql_dump_latest_clean_filenames='no'
@@ -84,9 +85,9 @@ load_default_config() {
   CONFIG_mysql_dump_full_schema='yes'
   CONFIG_mysql_dump_dbstatus='yes'
   CONFIG_mysql_dump_differential='no'
-  CONFIG_mysql_dump_login_path='automysqldump'
-  CONFIG_mysql_dump_login_path_file=''
   CONFIG_mysql_dump_encrypted_login='no'
+  CONFIG_mysql_dump_login_path='automysqldump'
+  CONFIG_mysql_dump_login_cnf_file=''
   CONFIG_backup_local_files=()
   CONFIG_db_names=()
   CONFIG_db_month_names=()
@@ -125,38 +126,49 @@ mysql_commands() {
     MYSQLSHOW_BIN="$(command -v mysqlshow)"
   fi
 
-
   VERSION=$(${MYSQL_BIN} -V | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
   NODOT_VER=$(echo "${VERSION}" | sed "${OS_sed_option}" 's/\.//g')
 
-  if [ "${CONFIG_mysql_dump_encrypted_login}" = "yes" ]
+  # default
+  mysql_opt=( "--user=${CONFIG_mysql_dump_username}" "--password=${CONFIG_mysql_dump_password}" "--host=${CONFIG_mysql_dump_host}" )
+
+  # overwrite authentications
+  if [[ -n "${CONFIG_mysql_dump_encrypted_login}" ]] || [[ "${CONFIG_mysql_dump_encrypted_login}" = "no" ]]
   then
-    mysql_opt=( "--login-path=${CONFIG_mysql_dump_login_path}" )
-
-    export MYSQLDUMP="${MYSQLDUMP_BIN} ${mysql_opt[*]}"
-    export MYSQLSHOW="${MYSQLSHOW_BIN} ${mysql_opt[*]}"
-    export MYSQL="${MYSQL_BIN} ${mysql_opt[*]}"
-    if [ -n "${CONFIG_mysql_dump_login_path_file}" ]
+    if [[ "${CONFIG_mysql_dump_encrypted_login}" = "yes" ]]
     then
-      export MYSQL_TEST_LOGIN_FILE=${CONFIG_mysql_dump_login_path}_file
+      mysql_opt=( "--login-path=${CONFIG_mysql_dump_login_path}" )
     fi
-  else
-    mysql_opt=( "--user=${CONFIG_mysql_dump_username}" "--password=${CONFIG_mysql_dump_password}" "--host=${CONFIG_mysql_dump_host}" )
 
-    export MYSQLDUMP="${MYSQLDUMP_BIN} ${mysql_opt[*]}";
-    export MYSQLSHOW="${MYSQLSHOW_BIN} ${mysql_opt[*]}";
-    export MYSQL="${MYSQL_BIN} ${mysql_opt[*]}";
+    if [ -n "${CONFIG_mysql_dump_login_cnf_file}" ] && [[ -f "${CONFIG_mysql_dump_login_cnf_file}" ]]
+    then
+      mysql_opt=( "--defaults-extra-file=${CONFIG_mysql_dump_login_cnf_file}" )
+    fi
   fi
+
+  export MYSQLDUMP="${MYSQLDUMP_BIN} ${mysql_opt[*]}";
+  export MYSQLSHOW="${MYSQLSHOW_BIN} ${mysql_opt[*]}";
+  export MYSQL="${MYSQL_BIN} ${mysql_opt[*]}";
 }
 
 # @return:  true, if variable is set; else false
 isSet() {
-  if [[ ! ${!1} && ${!1-_} ]]; then return 1; else return 0; fi
+  if [[ ! "${!1}" && "${!1-_}" ]]
+  then
+    return 1
+  else
+    return 0
+  fi
 }
 
 # @return:  true, if variable is empty; else false
 isEmpty() {
-  if [[ ${!1} ]]; then return 1; else return 0; fi
+  if [[ "${!1}" ]]
+  then
+    return 1
+  else
+    return 0
+  fi
 }
 
 # @info:  Called when one of the signals EXIT, SIGHUP, SIGINT, SIGQUIT or SIGTERM is emitted.
@@ -281,7 +293,7 @@ chk_folder_writable () {
 
 # @info:  bzip2 compression
 bzip2_compression() {
-  var=("$@")
+  var=("${@}")
   re='^[0-9]*$'
   if [[ "${CONFIG_multicore}" = 'yes' ]]
   then
@@ -297,7 +309,7 @@ bzip2_compression() {
 
 # @info:  gzip compression
 gzip_compression() {
-  var=("$@")
+  var=("${@}")
   re='^[0-9]*$'
   if [[ "${CONFIG_multicore}" = 'yes' ]]
   then
@@ -598,7 +610,7 @@ parse_configuration () {
 
   # if differential backup is active and the specified rotation is smaller than 21 days, set it to 21 days to ensure, that
   # master backups aren't deleted.
-  if [[ "x$CONFIG_mysql_dump_differential" = "xyes" ]] && (( ${CONFIG_rotation_daily} < 21 ))
+  if [[ "${CONFIG_mysql_dump_differential}" = "yes" ]] && (( ${CONFIG_rotation_daily} < 21 ))
   then
     CONFIG_rotation_daily=21
   fi
@@ -618,19 +630,20 @@ parse_configuration () {
   # <- determine suffix
 
   # -> check exclude tables for wildcards
-  local tmp;tmp=()
-  local z;z=0
+  local tmp;  tmp=()
+  local z;    z=0
 
   for i in "${CONFIG_table_exclude[@]}"
   do
     r='^[^*.]+\.[^.]+$'; [[ "$i" =~ $r ]] || {
-      printf 'The entry %s in CONFIG_table_exclude has a wrong format. Ignoring the entry.' "$i";
+      printf 'The entry %s in CONFIG_table_exclude has a wrong format. Ignoring the entry.' "${i}";
       continue;
     }
     db=${i%.*}
     table=${i#"${db}".}
-    r='\*'; [[ "$i" =~ $r ]] || {
-      tmp[z++]="$i";
+    r='\*'
+    [[ "$i" =~ $r ]] || {
+      tmp[z++]="${i}";
       continue;
     }
     while read -r
@@ -638,6 +651,7 @@ parse_configuration () {
       tmp[z++]="${db}.${REPLY}"
     done < <($MYSQL "${mysql_opt[@]}" --batch --skip-column-names -e "select table_name from information_schema.tables where table_schema='${db}' and table_name like '${table//\*/%}';")
   done
+
   for l in "${tmp[@]}"
   do
     echo "exclude $l"
@@ -652,6 +666,12 @@ parse_configuration () {
       opt=( "${opt[@]}" "--ignore-table=$i" )
     done
   fi
+
+  if (( "${CONFIG_debug}" ))
+  then
+    printf "[DEBUG] - db opts    '%s'\n" "${opt[*]}"
+  fi
+
 }
 
 # @info:  Backup database status
@@ -700,28 +720,28 @@ fullschema () {
   then
     case "${CONFIG_mysql_dump_compression}" in
       'gzip')
-        echo "dry-running: $MYSQLDUMP ${opt_fullschema[*]} | gzip_compression > ${1}${suffix}";
+        echo "dry-running: ${MYSQLDUMP} ${opt_fullschema[*]} | gzip_compression > ${1}${suffix}";
         ;;
       'bzip2')
-        echo "dry-running: $MYSQLDUMP ${opt_fullschema[*]} | bzip2_compression > ${1}${suffix}";
+        echo "dry-running: ${MYSQLDUMP} ${opt_fullschema[*]} | bzip2_compression > ${1}${suffix}";
         ;;
       *)
-        echo "dry-running: $MYSQLDUMP ${opt_fullschema[*]} > ${1}${suffix}";
+        echo "dry-running: ${MYSQLDUMP} ${opt_fullschema[*]} > ${1}${suffix}";
         ;;
     esac
     return 0;
   else
     case "${CONFIG_mysql_dump_compression}" in
       'gzip')
-        $MYSQLDUMP "${opt_fullschema[@]}" | gzip_compression > "${1}${suffix}";
+        ${MYSQLDUMP} "${opt_fullschema[@]}" | gzip_compression > "${1}${suffix}";
         return $?
         ;;
       'bzip2')
-        $MYSQLDUMP "${opt_fullschema[@]}" | bzip2_compression > "${1}${suffix}";
+        ${MYSQLDUMP} "${opt_fullschema[@]}" | bzip2_compression > "${1}${suffix}";
         return $?
         ;;
       *)
-        $MYSQLDUMP "${opt_fullschema[@]}" > "${1}${suffix}";
+        ${MYSQLDUMP} "${opt_fullschema[@]}" > "${1}${suffix}";
         return $?
         ;;
     esac
@@ -731,14 +751,14 @@ fullschema () {
 # @info:  Process a single db.
 # @args:  subfolder, prefix, midfix, extension, rotation, rotation_divisor, rotation_string, 0/1 (db/dbs), db[, db ...]
 process_dbs() {
-  local subfolder="$1"
-  local prefix="$2"
-  local midfix="$3"
-  local extension="$4"
-  local rotation="$5"
-  local rotation_divisor="$6"
-  local rotation_string="$7"
-  local multipledbs="$8"
+  local subfolder="${1}"
+  local prefix="${2}"
+  local midfix="${3}"
+  local extension="${4}"
+  local rotation="${5}"
+  local rotation_divisor="${6}"
+  local rotation_string="${7}"
+  local multipledbs="${8}"
   shift 8
 
   local name
@@ -747,7 +767,7 @@ process_dbs() {
   # only activate differential backup for daily backups
   [[ "x${subfolder}" != "xdaily" ]] && activate_differential_backup=0 || activate_differential_backup=1
 
-  if (( $multipledbs ))
+  if (( ${multipledbs} ))
   then
     # multiple dbs
     subsubfolder=""
@@ -772,7 +792,7 @@ process_dbs() {
 
   (( ${CONFIG_debug} )) && echo "DEBUG: process_dbs >> Setting manifest file to: ${manifest_file}"
 
-  if (( $multipledbs ))
+  if (( ${multipledbs} ))
   then
     # multiple databases
     db="all-databases"
@@ -781,13 +801,13 @@ process_dbs() {
     db="${1}"
   fi
 
-  if [[ "x$CONFIG_mysql_dump_differential" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup ))
+  if [[ "x${CONFIG_mysql_dump_differential}" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup ))
   then
 
     unset manifest_entry manifest_entry_to_check
 
     echo "## Reading in Manifest file"
-    parse_manifest "$manifest_file"
+    parse_manifest "${manifest_file}"
 
     echo
     echo "Number of manifest entries: $(num_manifest_entries)"
@@ -831,10 +851,10 @@ process_dbs() {
     ## <- get latest master manifest entry for specified db
   fi
 
-  if [[ "x$CONFIG_mysql_dump_differential" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup )) && ((! ($filename_flags & ${filename_flag_encrypted}) ))
+  if [[ "x${CONFIG_mysql_dump_differential}" = "xyes" ]] && [[ "x${CONFIG_encrypt}" != "xyes" ]] && (( $activate_differential_backup )) && ((! ($filename_flags & ${filename_flag_encrypted}) ))
   then
     # the master file is encrypted ... well this just shouldn't happen ^^ not going to decrypt or stuff like that ...at least not today :)
-    if [[ "x$pid" = "x0" ]]
+    if [[ "x${pid}" = "x0" ]]
     then
       # -> create master backup
       cfname="$(mktemp "${fname%.sql}_XXXXXXXX.sql${suffix}")"
@@ -843,16 +863,16 @@ process_dbs() {
 
       case "${CONFIG_mysql_dump_compression}" in
         'gzip')
-          $MYSQLDUMP "${opt[@]}" "$@" | gzip_compression > "$cfname";
+          ${MYSQLDUMP} "${opt[@]}" "${@}" | gzip_compression > "${cfname}";
           ;;
         'bzip2')
-          $MYSQLDUMP "${opt[@]}" "$@" | bzip2_compression > "$cfname";
+          ${MYSQLDUMP} "${opt[@]}" "${@}" | bzip2_compression > "${cfname}";
           ;;
         *)
-          $MYSQLDUMP "${opt[@]}" "$@" > "$cfname";
+          ${MYSQLDUMP} "${opt[@]}" "${@}" > "${cfname}";
           ;;
       esac
-      add_manifest_entry "$manifest_file" "$cfname" "$pid" "${db}" && parse_manifest "$manifest_file" && cp -al "$cfname" "${CONFIG_backup_dir}"/latest/ && echo "Generated master backup $cfname" && return 0 || return 1
+      add_manifest_entry "${manifest_file}" "${cfname}" "${pid}" "${db}" && parse_manifest "${manifest_file}" && cp -al "${cfname}" "${CONFIG_backup_dir}"/latest/ && echo "Generated master backup ${cfname}" && return 0 || return 1
       # <- create master backup
     else
       cfname="$(mktemp "${fname%.sql}_XXXXXXXX.diff${suffix}")"
@@ -864,38 +884,38 @@ process_dbs() {
         'gzip')
           if (( $filename_flags & ${filename_flag_gz} ))
           then
-            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | gzip_compression > "$cfname";
+            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
           elif (( $filename_flags & ${filename_flag_bz2} ))
           then
-            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | gzip_compression > "$cfname";
+            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
           else
-            diff "${manifest_latest_master_entry[0]}" <($MYSQLDUMP "${opt[@]}" "$@") | gzip_compression > "$cfname";
+            diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") | gzip_compression > "${cfname}";
           fi
           ;;
         'bzip2')
           if (( $filename_flags & ${filename_flag_gz} ))
           then
-            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | bzip2_compression > "$cfname";
+            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
           elif (( $filename_flags & ${filename_flag_bz2} ))
           then
-            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") | bzip2_compression > "$cfname";
+            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
           else
-            diff "${manifest_latest_master_entry[0]}" <($MYSQLDUMP "${opt[@]}" "$@") | bzip2_compression > "$cfname";
+            diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") | bzip2_compression > "${cfname}";
           fi
           ;;
         *)
           if (( $filename_flags & ${filename_flag_gz} ))
           then
-            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") > "$cfname";
+            diff <(gzip_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
           elif (( $filename_flags & ${filename_flag_bz2} ))
           then
-            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <($MYSQLDUMP "${opt[@]}" "$@") > "$cfname";
+            diff <(bzip2_compression -dc "${manifest_latest_master_entry[0]}") <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
           else
-            diff "${manifest_latest_master_entry[0]}" <($MYSQLDUMP "${opt[@]}" "$@") > "$cfname";
+            diff "${manifest_latest_master_entry[0]}" <(${MYSQLDUMP} "${opt[@]}" "${@}") > "${cfname}";
           fi
           ;;
       esac
-      add_manifest_entry "$manifest_file" "$cfname" "$pid" "${db}" && parse_manifest "$manifest_file" && cp -al "$cfname" "${manifest_latest_master_entry[0]}" "${CONFIG_backup_dir}"/latest/ && echo "generated $cfname" && return 0 || return 1
+      add_manifest_entry "${manifest_file}" "${cfname}" "${pid}" "${db}" && parse_manifest "${manifest_file}" && cp -al "${cfname}" "${manifest_latest_master_entry[0]}" "${CONFIG_backup_dir}"/latest/ && echo "generated ${cfname}" && return 0 || return 1
     fi
     # <- generate diff filename
 
@@ -905,28 +925,28 @@ process_dbs() {
     then
       case "${CONFIG_mysql_dump_compression}" in
         'gzip')
-          echo "dry-running: $MYSQLDUMP ${opt[@]} $@ | gzip_compression > ${cfname}"
+          echo "dry-running: ${MYSQLDUMP} "${opt[*]}" "${@}" | gzip_compression > ${cfname}"
           ;;
         'bzip2')
-          echo "dry-running: $MYSQLDUMP ${opt[@]} $@ | bzip2_compression > ${cfname}"
+          echo "dry-running: ${MYSQLDUMP} "${opt[*]}" "${@}" | bzip2_compression > ${cfname}"
           ;;
         *)
-          echo "dry-running: $MYSQLDUMP ${opt[@]} $@ > ${cfname}"
+          echo "dry-running: ${MYSQLDUMP} "${opt[*]}" "${@}" > ${cfname}"
           ;;
       esac
       return 0;
     else
       case "${CONFIG_mysql_dump_compression}" in
         'gzip')
-          $MYSQLDUMP "${opt[@]}" "$@" | gzip_compression > "${cfname}"
+          ${MYSQLDUMP} "${opt[@]}" "${@}" | gzip_compression > "${cfname}"
           ret=$?
           ;;
         'bzip2')
-          $MYSQLDUMP "${opt[@]}" "$@" | bzip2_compression > "${cfname}"
+          ${MYSQLDUMP} "${opt[@]}" "${@}" | bzip2_compression > "${cfname}"
           ret=$?
           ;;
         *)
-          $MYSQLDUMP "${opt[@]}" "$@" > "${cfname}"
+          ${MYSQLDUMP} "${opt[@]}" "${@}" > "${cfname}"
           ret=$?
           ;;
       esac
@@ -942,8 +962,10 @@ process_dbs() {
     else
       find "${CONFIG_backup_dir}/${subfolder}${subsubfolder}" -mtime +"${rotation}" -type f -exec rm {} \;
     fi
-    files_postprocessing "$cfname"
-    tmp_flags=$?; var=; (( $tmp_flags & "${flags_files_postprocessing_success_encrypt}" )) && var=.enc
+    files_postprocessing "${cfname}"
+    tmp_flags=$?
+    var=
+    (( $tmp_flags & "${flags_files_postprocessing_success_encrypt}" )) && var=.enc
     backupfiles=( "${backupfiles[@]}" "${cfname}${var}" )
   else
     let "E |= $E_dbdump_failed"
@@ -1019,7 +1041,13 @@ directory_checks_enable_logging () {
     # pre define logfiles
     log_date=$(date +%N)
     log_file_stdout="${CONFIG_mysql_dump_host}-${log_date}.log"
-    log_file_stderr="ERRORS_${CONFIG_mysql_dump_host}-${log_date}.log"
+    log_file_stderr="${CONFIG_mysql_dump_host}-${log_date}.err"
+
+    if (( "${CONFIG_dryrun}" ))
+    then
+      printf " - logfile    '%s'\n" "${log_file_stdout}"
+      printf " - error logs '%s'\n" "${log_file_stderr}"
+    fi
 
     if [[ -d "${CONFIG_backup_dir}" ]]
     then
@@ -1071,11 +1099,10 @@ directory_checks_enable_logging () {
       log_errfile="/tmp/${log_file_stderr}"
       activateIO "${log_file}" "${log_errfile}"
     else
-      printf 'does not exist. Exiting.\n'
+      printf "backup directory '%s' does not exist. Exiting.\n" "$(dirname "${CONFIG_backup_dir}")"
       let "E |= $E_no_basedir"
       error_handler
     fi
-
   fi
   # <- check base folder
 
@@ -1123,16 +1150,16 @@ cleanup_latest ()  {
   if [[ "${CONFIG_mysql_dump_latest}" = "yes" ]]
   then
     printf   'Cleaning up latest directory ... '
-    if (( $  CONFIG_dryrun ))
+    if (( ${CONFIG_dryrun} ))
     then
-      print  f 'dry-running. Skipping.\n'
+      printf 'dry-running. Skipping.\n'
     else
       if rm -f "${CONFIG_backup_dir}"/latest/* >/dev/null 2>&1
       then
         printf 'success.\n'
       else
         printf 'failed. Continuing anyway, activating Note-Flag.\n'
-        let "N |= $N_latest_cleanup_failed"
+        let "N |= ${N_latest_cleanup_failed}"
       fi
     fi
   fi
@@ -1146,38 +1173,44 @@ cleanup_latest ()  {
 check_dependencies () {
   echo
   echo "# Testing for installed programs"
-  dependencies=( 'mysql' 'mysqldump' )
+  dependencies=(
+    "mariadb" "mariadb-dump"
+    "mysql" "mysqldump"
+  )
 
-  if [[ "x$CONFIG_multicore" = 'xyes' ]]
+  if [[ -n "${CONFIG_multicore}" ]] && [[ "${CONFIG_multicore}" = 'yes' ]] || [[ "${CONFIG_multicore}" = '1' ]]
   then
-    if [[ "x$CONFIG_mysql_dump_compression" = 'xbzip2' ]]
+    if [[ -n "${CONFIG_mysql_dump_compression}" ]] && [[ "${CONFIG_mysql_dump_compression}" = 'bzip2' ]]
     then
-      if type pbzip2 &>/dev/null
+      if [[ ! -n $(command -v pbzip2) ]]
       then
-        echo "pbzip2 ... found."
-      else
         CONFIG_multicore='no' # turn off multicore support, since the program isn't there
         echo "WARNING: Turning off multicore support, since pbzip2 isn't there."
-      fi
-    elif [[ "x$CONFIG_mysql_dump_compression" = 'xgzip' ]]
-    then
-      if type pigz &>/dev/null
-      then
-        echo "pigz ... found."
       else
+        echo "pbzip2 ... found."
+      fi
+    elif [[ -n "${CONFIG_mysql_dump_compression}" ]] && [[ "${CONFIG_mysql_dump_compression}" = 'gzip' ]]
+    then
+      if [[ ! -n $(command -v pigz) ]]
+      then
         CONFIG_multicore='no' # turn off multicore support, since the program isn't there
         echo "WARNING: Turning off multicore support, since pigz isn't there."
+      else
+        echo "pigz ... found."
       fi
     fi
-  else
-    [[ "x$CONFIG_mysql_dump_compression" = 'xbzip2' ]] && dependencies=("${dependencies[@]}" 'bzip2' )
-    [[ "x$CONFIG_mysql_dump_compression" = 'xgzip' ]] && dependencies=("${dependencies[@]}" 'gzip' )
   fi
 
-  if [[ "x$CONFIG_mailcontent" = 'xlog' || "x$CONFIG_mailcontent" = 'xquiet' ]]
+  if [[ -n "${CONFIG_mysql_dump_compression}" ]]
+  then
+    [[ "${CONFIG_mysql_dump_compression}" = 'bzip2' ]] && dependencies=("${dependencies[@]}" 'bzip2' )
+    [[ "${CONFIG_mysql_dump_compression}" = 'gzip' ]] && dependencies=("${dependencies[@]}" 'gzip' )
+  fi
+
+  if [[ "${CONFIG_mailcontent}" = 'log' || "${CONFIG_mailcontent}" = 'quiet' ]]
   then
     dependencies=( "${dependencies[@]}" 'mail' )
-  elif [[ "x$CONFIG_mailcontent" = 'xfiles' ]]
+  elif [[ "x${CONFIG_mailcontent}" = 'xfiles' ]]
   then
     dependencies=( "${dependencies[@]}" 'mail' )
     if [[ "x$CONFIG_mail_use_uuencoded_attachments" != 'xyes' ]]
@@ -1189,13 +1222,13 @@ check_dependencies () {
   for i in "${dependencies[@]}"
   do
     printf '%s ... ' "$i"
-    if type "$i" &>/dev/null
+    if [[ ! -n $(command -v "${i}") ]]
     then
-      printf 'found.\n'
-    else
       printf 'not found. Aborting.\n';
-      let "E |= $E_missing_deps"
+      let "E |= ${E_missing_deps}"
       error_handler
+    else
+      printf 'found.\n'
     fi
   done
   echo ""
@@ -1249,399 +1282,6 @@ parse_databases() {
   printf "done.\n"
 }
 
-# @return:  true if locked, false otherwise
-# @param:  manifest_file
-status_manifest() {
-  if [[ -e "$1".lock ]]
-  then
-    return 0
-  else
-    return 1
-  fi
-}
-
-# @return: true if successfully created lock file, else false
-# @param:  manifest_file
-lock_manifest() {
-  if status_manifest "$1"
-  then
-    return 0
-  else
-    if touch "$1".lock &>/dev/null
-    then
-      return 0
-    else
-      return 1
-    fi
-  fi
-}
-
-# @return: true if successfully removed lock file, else false
-# @param:  manifest_file
-unlock_manifest() {
-  if status_manifest "$1"
-  then
-    if rm "$1".lock &>/dev/null
-    then
-      return 0
-    else
-      return 1
-    fi
-  else
-    return 0
-  fi
-}
-
-# @return: true if unlock_manifest or lock_manifest, depending on status_manifest, return true, else false
-# @param:  manifest_file
-toggle_manifest() {
-  if status_manifest "$1"
-  then
-    unlock_manifest "$1" && return 0 || return 1
-  else
-    lock_manifest "$1" && return 0 || return 1
-  fi
-}
-
-# expects manifest_entry_to_check to be an array with four entries
-# @param:  manifest_file
-# return:  0, if all is okay
-#      1, file doesn't exist - removed entry from manifest
-#      2, file doesn't exist - tried to remove entry from manifest, but failed
-check_manifest_entry() {
-  local entry_md5sum
-  [[ ! -e "${manifest_entry_to_check[0]}" ]] && { rm_manifest_entry_by_filename "${manifest_entry_to_check[0]}" 1 && return 1 || return 2; }
-  entry_md5sum="$(md5sum "${manifest_entry_to_check[0]}" | awk '{print $1}')"
-
-  if [[ "${entry_md5sum}" != "${manifest_entry_to_check[1]}" ]]
-  then
-    printf 'g/%s/s//%s/g\nw\nq' "${manifest_entry_to_check[1]}" "${entry_md5sum}" | ed -s "$1"
-  else
-    return 0
-  fi
-}
-
-# parse manifest file and collect entries in manifest_array
-# @param:  manifest_file
-#
-#  sort manifest file after first field (filename) -> read this line by line
-#    check if line matches regexp || add to array manifest_entries_corrupted && continue
-#    split lines at tab character \t and put into array line_arr
-#    check manifest entry
-#      -> file does not exist -> remove entry from manifest; continue no matter if this succeeds or not
-#    loop through previous entries in the manifest
-#      filename already in there? remove all entries with the same filename but the one that is already in the array
-#      md5sum has already occured?
-#        if size = 0
-#          then don't compare
-#        else
-#          request user action by adding entry to array manifest_entries_user_action_required with information, that identical files exist && continue 2
-#        fi
-#    add entry to manifest_array
-#
-parse_manifest() {
-  local i n re line line_arr check
-  unset manifest_array; manifest_array=()
-  local tmp_md5sum
-  # array ( filename_1, md5sum_1, id_1[, rel_id_1] ), ... )
-  # reserving 4 members for each entry, thus each filename entry in the array has array key 4(n-1)+1
-  (( ${CONFIG_debug} )) && echo ">>>>>>> Parsing manifest file: $1"
-  n=1
-  [[ -s "$1" ]] &&
-  while read line
-  do
-    # ANY CHANGES INSIDE HERE ON THE MANIFEST_FILE HAVE NO IMPACT ON THE LINES WE LOOP OVER; THE sort COMMAND READS THE FILE ENTIRELY AT THE BEGINNING AND PASSES THE OUTPUT TO THE LOOP
-    # check if line has expected format, i.e. check against regular expression
-    re=$'^[^\t]*\tmd5sum\t[^\t]*\tdiff_id\t[A-Za-z0-9]{8}\trel_id\t(0|[A-Za-z0-9]{8})\tdb\t[^\t]*$'
-    [[ $line =~ $re ]] || { echo "Corrupted line: $line"; manifest_entries_corrupted=( "${manifest_entries_corrupted[@]}" "$1" "$line" ); continue; }
-    IFS=$'\t' read -ra line_arr <<< "$line"
-
-    # prepare array of the current line
-    manifest_entry_to_check=()
-    for ((i=0;i<${#line_arr[@]};i=$i+2))
-    do
-      manifest_entry_to_check[i/2]="${line_arr[i]}"
-    done
-    # check manifest entry, which uses the array manifest_entry_to_check
-    check_manifest_entry "$1"
-    check=$?
-    case $check in
-      1)
-        (( ${CONFIG_debug} )) && echo "File for manifest entry $line does not exist. Entry removed."
-        continue # file doesn't exist - removed entry from manifest
-        break
-        ;;
-      2)
-        (( ${CONFIG_debug} )) && echo "File for manifest entry $line does not exist. Failed to remove the entry."
-        continue # file doesn't exist - tried to remove entry from manifest, but failed
-        break
-        ;;
-    esac
-
-    # loop through the manifest_array, as it has been filled by now and check if an entry already exists with the same values
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
-    do
-      if [[ "x${manifest_array[i]}" = "x${line_arr[0]}" ]]
-      then
-        # found entry with the same filename
-        (( ${CONFIG_debug} )) && echo "Found multiple entries with the same filename. Removing all but the first-found entry from manifest."
-        # remove all entries with this filename and add a new one based on the values of the item already in the array
-        rm_manifest_entry_by_filename "$1" "${manifest_array[i]}" 1 && add_manifest_entry "$1" "${manifest_array[i]}" "${manifest_array[i+3]}"
-        continue 2  # the original entry, to which we compared, is already in the manifest_array; no matter if this is resolved or not, we don't
-
-        # need to add this entry to the manifest_array
-      elif [[ "x${manifest_array[i+1]}" = "x${line_arr[2]}" ]]
-      then  # found entry with different filename but same md5sum - file copied and renamed?!
-        if [[ ! -s "${line_arr[0]}" ]]
-        then
-          # empty file - don't start to compare md5sums ...
-          (( ${CONFIG_debug} )) && echo "Found empty file ${line_arr[0]}."
-        else
-          (( ${CONFIG_debug} )) && echo "Found multiple entries with the same md5sum but different filename."
-          (( ${CONFIG_debug} )) && echo -e ">> fname_manifest:\t${manifest_array[i]}\t${manifest_array[i+1]}\n>> fname_line:\t\t${line_arr[0]}\t${line_arr[2]}"
-          if [[ "x${line_arr[6]}" != "x0" ]]
-          then
-            if [[ "x${manifest_array[i+3]}" = "x${line_arr[6]}" ]]
-            then  # parent id is the same; TODO inform user of this predicament and suggest solution
-              manifest_entries_user_action_required=( "${manifest_entries_user_action_required[@]}" "$1" "${manifest_array[i]}" "The file has an identical copy with the same parent id. If you don't know why it exists, it is safe to remove it." )
-              continue 2
-            else
-              manifest_entries_user_action_required=( "${manifest_entries_user_action_required[@]}" "$1" "${manifest_array[i]}" "The file has an identical copy with different parent id. This should not happen. Remove the file, which is not the correct follow-up to the previous differential or master backup." )
-              continue 2
-            fi
-          fi
-        fi
-      fi
-    done
-
-    # add entry to manifest array
-    for ((i=0;i<${#line_arr[@]};i=$i+2))
-    do
-      manifest_array[(n-1)*${fields}+i/2]="${line_arr[i]}"
-      #echo "manifest array key $((($n-1)*4+$i/2)) with value ${line_arr[i]}"
-    done
-
-    ((n++))
-  done < <(sort -t $'\t' -k"1" "$1")
-
-  (( ${CONFIG_debug} )) && echo "<<<<<<< # manifest entries: $((${#manifest_array[@]}/$fields))"
-  (( ${CONFIG_debug} )) && echo "<<<<<<< FINISHED"
-  return 0
-}
-
-# get_manifest_entry_by_* PATTERN [regexp]
-# if second parameter 'regexp' (string!) is passed, PATTERN will be matched as regular expression
-get_manifest_entry_by_filename() {
-  local i
-  if [[ "x$2" = "xregexp" ]]
-  then
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
-    do
-      if [[ "${manifest_array[i]}" =~ $1 ]]
-      then
-        manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-        return 0
-        break;
-      fi
-    done
-  else
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
-    do
-      if [[ "x${manifest_array[i]}" = "x$1" ]]
-      then
-        manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-        return 0
-        break;
-      fi
-    done
-  fi
-  return 1
-}
-
-get_manifest_entry_by_md5sum() {
-  local i
-  if [[ "x$2" = "xregexp" ]]
-  then
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
-    do
-      if [[ "${manifest_array[i+1]}" =~ $1 ]]; then
-        manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-        return 0
-        break;
-      fi
-    done
-  else
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
-    do
-      if [[ "x${manifest_array[i+1]}" = "x$1" ]]
-      then
-        manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-        return 0
-        break;
-      fi
-    done
-  fi
-  return 1
-}
-
-get_manifest_entry_by_id() {
-  local i
-  if [[ "x$2" = "xregexp" ]]; then
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields)); do
-      if [[ "${manifest_array[i+2]}" =~ $1 ]]; then
-    manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-    return 0
-    break;
-      fi
-    done
-  else
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields)); do
-      if [[ "x${manifest_array[i+2]}" = "x$1" ]]; then
-    manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-    return 0
-    break;
-      fi
-    done
-  fi
-  return 1
-}
-
-get_manifest_entry_by_rel_id() {
-  local i
-  if [[ "x$2" = "xregexp" ]]; then
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields)); do
-      if [[ "${manifest_array[i+3]}" =~ $1 ]]; then
-    manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-    return 0
-    break;
-      fi
-    done
-  else
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields)); do
-      if [[ "x${manifest_array[i+3]}" = "x$1" ]]; then
-    manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-    return 0
-    break;
-      fi
-    done
-  fi
-  return 1
-}
-
-get_manifest_entry_by_db() {
-  local i
-  if [[ "x$2" = "xregexp" ]]; then
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields)); do
-      if [[ "${manifest_array[i+4]}" =~ $1 ]]; then
-    manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-    return 0
-    break;
-      fi
-    done
-  else
-    for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields)); do
-      if [[ "x${manifest_array[i+4]}" = "x$1" ]]; then
-    manifest_entry=( "${manifest_array[i]}" "${manifest_array[i+1]}" "${manifest_array[i+2]}" "${manifest_array[i+3]}" "${manifest_array[i+4]}" )
-    return 0
-    break;
-      fi
-    done
-  fi
-  return 1
-}
-
-# @params:  db, master/diff (0,1)
-# @return:  2: no entries in manifest for the specified database 'db'
-#      1: could not get manifest element by filename
-#      0: all fine, match is in array 'manifest_entry'
-get_latest_manifest_entry_for_db() {
-  local db_array newarray i
-  for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
-  do
-    if (( $2 ))
-    then # latest differential or master backup, i.e. just take the latest one!
-      if [[ "x${manifest_array[i+4]}" = "x$1" ]]
-      then
-        db_array=( "${db_array[@]}" "${manifest_array[i]}" )
-      fi
-    else # latest master backup, pid=0
-      if [[ "x${manifest_array[i+4]}" = "x$1" && "x${manifest_array[i+3]}" = "x0" ]]
-      then
-        db_array=( "${db_array[@]}" "${manifest_array[i]}")
-      fi
-    fi
-  done
-  if (( "${#db_array[@]}" == 0 ))
-  then
-    return 2;
-  else
-    #newarray=(); while IFS= read -r -d '' line; do newarray+=("$line"); done < <(printf '%s\0' "${db_array[@]}" | sort -z)
-    get_manifest_entry_by_filename "${db_array[@]:(-1)}" # last entry of db_array, has, due to the way sort works, to be the latest one
-    return $?
-  fi
-}
-
-# @params:  manifest_file  filename/md5sum/id/rel_id  [1(=don't parse manifest after finished)]
-# if second parameters
-#
-#  lock manifest -> use awk, print all lines that don't have second parameter at the appropriate field -> unlock manifest
-#  param3=0 -> parse manifest
-#
-rm_manifest_entry_by_filename() {
-  lock_manifest "$1" && awk -F"\t" -v v="$2" '$1 != v' "$1" > "$1".tmp && mv "$1".tmp "$1" && unlock_manifest "$1" || return 1
-  (( "$3" )) || parse_manifest "$1"
-  return 0
-}
-rm_manifest_entry_by_md5sum() {
-  lock_manifest "$1" && awk -F"\t" -v v="$2" '$3 != v' "$1" > "$1".tmp && mv "$1".tmp "$1" && unlock_manifest "$1" || return 1
-  (( "$3" )) || parse_manifest "$1"
-  return 0
-}
-rm_manifest_entry_by_id() {
-  lock_manifest "$1" && awk -F"\t" -v v="$2" '$5 != v' "$1" > "$1".tmp && mv "$1".tmp "$1" && unlock_manifest "$1" || return 1
-  (( "$3" )) || parse_manifest "$1"
-  return 0
-}
-rm_manifest_entry_by_rel_id() {
-  lock_manifest "$1" && awk -F"\t" -v v="$2" '$7 != v' "$1" > "$1".tmp && mv "$1".tmp "$1" && unlock_manifest "$1" || return 1
-  (( "$3" )) || parse_manifest "$1"
-  return 0
-}
-rm_manifest_entry_by_db() {
-  lock_manifest "$1" && awk -F"\t" -v v="$2" '$9 != v' "$1" > "$1".tmp && mv "$1".tmp "$1" && unlock_manifest "$1" || return 1
-  (( "$3" )) || parse_manifest "$1"
-  return 0
-}
-
-# parameters: manifest_file, filename, parent_id, db
-add_manifest_entry() {
-  local md5sum
-  local id
-  local filename
-  local parent_id
-  local db
-  filename="$2"
-  parent_id="$3"
-  db="$4"
-  lock_manifest "$1" || return 1
-  id="${filename%.@(diff|sql)*}"
-  id="${id:(-8):8}"
-  #id="$(echo $filename | sed -re 's/.*_[0-9]{2}h[0-9]{2}m_([^\.]*)\..*/\1/')"
-  md5sum="$(md5sum "$filename" | awk '{print $1}')"
-  if [[ "x$parent_id" = 'x' ]]
-  then
-    echo -e "${filename}\tmd5sum\t${md5sum}\tdiff_id\t${id}\trel_id\t0\tdb\t${db}" >> "$1"
-  else
-    echo -e "${filename}\tmd5sum\t${md5sum}\tdiff_id\t${id}\trel_id\t${parent_id}\tdb\t${db}" >> "$1"
-  fi
-  unlock_manifest "$1" || return 1
-}
-
-# @info:  Echos number of manifest entries.
-num_manifest_entries() {
-  echo "$((${#manifest_array[@]}/$fields))"
-}
-
 # @info:  Test if a value is in the array testarray
 # @param:  value
 # @var in_array_index:  array index of the first match
@@ -1665,7 +1305,7 @@ extended_select() {
   meta_information="$2"
   do_clear="$1"
   shift 2
-  declare -a list=("$@")
+  declare -a list=("${@}")
   selection=()
   # BEGIN _select_filenames
   #tput sc
@@ -1922,7 +1562,9 @@ method_backup () {
 
   (( "${CONFIG_dryrun}" )) && {
     echo "NOTE: We are dry-running. That means, that the script just shows you what it would do, if it were operating normally."
-    echo "THE PRINTED COMMANDS CAN'T BE COPIED AND EXECUTED IF THERE ARE SPECIAL CHARACTERS, SPACES, ETC. IN THERE THAT WOULD NEED TO BE PROPERLY QUOTED IN ORDER TO WORK. THESE WERE CORRECTLY QUOTED FOR THE OUTPUT COMMAND, BUT CAN'T BE SEEN NOW."
+    echo "THE PRINTED COMMANDS CAN'T BE COPIED AND EXECUTED IF THERE ARE SPECIAL CHARACTERS, SPACES, ETC."
+    echo "IN THERE THAT WOULD NEED TO BE PROPERLY QUOTED IN ORDER TO WORK. THESE WERE CORRECTLY QUOTED FOR THE OUTPUT COMMAND,"
+    echo "BUT CAN'T BE SEEN NOW."
     echo
   }
 
@@ -1937,7 +1579,6 @@ method_backup () {
   set_datetime_vars
   check_dependencies  # check for required programs
   parse_configuration  # parse configuration and set variables appropriately
-
 
   # END __STARTUP
   #--------------------------------------------------------------------------------------------------------------------------------------
@@ -1958,7 +1599,6 @@ method_backup () {
     ( IFS=,; echo "DEBUG: CONFIG_db_names '${CONFIG_db_names[*]}'" )
     ( IFS=,; echo "DEBUG: CONFIG_db_month_names '${CONFIG_db_month_names[*]}'" )
   }
-
 
   # END __PREPARE
   #--------------------------------------------------------------------------------------------------------------------------------------
@@ -2277,7 +1917,7 @@ method_backup () {
 
 
   # -> clean latest filenames
-  [[ "${CONFIG_mysql_dump_latest_clean_filenames}" = 'yes' ]] && find "${CONFIG_backup_dir}"/latest/ -type f -exec bash -c 'remove_datetimeinfo "$@"' -- {} \;
+  [[ "${CONFIG_mysql_dump_latest_clean_filenames}" = 'yes' ]] && find "${CONFIG_backup_dir}"/latest/ -type f -exec bash -c 'remove_datetimeinfo "${@}"' -- {} \;
   # <- clean latest filenames
 
   # -> finished information
@@ -2308,207 +1948,6 @@ method_backup () {
   fi
 
   exit ${status}
-}
-
-# @return  variable method_list_manifest_entries_array
-method_list_manifest_entries () {
-  local files files_master files_manifest file db manifest_files manifest_files_db selected_dbs i z l master_flags master to_rm actions
-  manifest_entries_corrupted=()
-  manifest_entries_user_action_required=()
-  files=()
-  files_master=()
-  files_manifest=()
-  master_flags=0
-  (( "filename_flag_encrypted=0x01" ))
-  (( "filename_flag_gz=0x02" ))
-  (( "filename_flag_bz2=0x04" ))
-  (( "filename_flag_diff=0x08" ))
-
-  ##############################################################################################################
-  # BEGIN __STARTUP
-
-  load_default_config
-
-  if [[ -r "${CONFIG_configfile}" ]]
-  then
-    source "${CONFIG_configfile}"
-    echo "Parsed config file \"${CONFIG_configfile}\""
-  else
-    (( "N |= ${N_config_file_missing}" ))
-  fi
-  echo
-
-  if (( ${opt_flag_config_file} ))
-  then
-    if [[ -r "${opt_config_file}" ]]
-    then
-      source "${opt_config_file}"
-      (( "N |= ${N_arg_conffile_parsed}" ))
-    else
-      (( "N |= ${N_arg_conffile_unreadable}" ))
-    fi
-  else
-    (( "N |= $N_too_many_args"))
-  fi
-
-  # load mysql commands
-  mysql_commands
-
-  export LC_ALL=C
-#   PROGNAME=$(basename "${0}")
-  PATH=${PATH}:/usr/local/bin:/usr/bin:/bin:/usr/local/mysql/bin
-  version=3.0
-  fields=5 # manifest fields
-
-  set_datetime_vars
-  check_dependencies  # check for required programs
-  parse_configuration  # parse configuration and set variables appropriately
-
-  # BEGIN __MAIN
-  unset manifest_files manifest_files_db i db
-
-  while IFS= read -r -d '' file
-  do
-    db="${file#/var/backup/db/@(daily|monthly|weekly|latest)/}";
-    db="${db%/Manifest}";
-    manifest_files_db[i]="${db}"
-    manifest_files[i++]="$file"
-  done < <(find "${CONFIG_backup_dir}"/ -type f -name 'Manifest' -print0)
-
-  extended_select 0 "Databases" "${manifest_files_db[@]}"
-  declare -a selected_dbs=("${extended_select_return[@]}")
-
-  for db in "${selected_dbs[@]}"
-  do
-    selected_available_files=()
-    for ((i=0;i<"${#manifest_files_db[@]}";i++))
-    do
-      if [[ "x${manifest_files_db[i]}" = "x${db}" ]]
-      then
-        selected_available_files[j++]="${manifest_files[i]}"
-      fi
-    done
-
-    if (( "${#selected_available_files[@]}" > 0 ))
-    then
-      extended_select 1 "${db}" "${selected_available_files[@]}"
-      declare -a selected_entries=("${extended_select_return[@]}")
-
-      if (( "${#selected_entries[@]}" > 0 ))
-      then
-        for z in "${selected_entries[@]}"
-        do
-          parse_manifest "$z"
-          list=()
-          list_id=()
-          for ((i=0;$i<"${#manifest_array[@]}";i=$i+$fields))
-          do
-            if [[ "${manifest_array[i+3]}" != 0 ]]
-            then # only add differential backups
-              list=("${list[@]}" "${manifest_array[i]}")
-              list_id=("${list_id[@]}" "${manifest_array[i+3]}") # save rel_id, so we can retrieve the master backup file
-            fi
-          done
-
-          if (( "${#list[@]}" > 0 ))
-          then
-            extended_select 1 "$z" "${list[@]}"
-            if (( "${#extended_select_return[@]}" > 0 ))
-            then
-              for ((i=0;$i<"${#extended_select_return[@]}";i++))
-              do
-                if get_manifest_entry_by_id "${list_id[${extended_select_return_id[i]}]}"
-                then
-                  files=("${files[@]}" "${extended_select_return[i]}")
-                  files_master=("${files_master[@]}" "${manifest_entry[0]}")
-                  files_manifest=("${files_manifest[@]}" "$z")
-                else
-                  echo "no found master for id ${list_id[${extended_select_return_id[i]}]}"
-                fi
-              done
-            fi
-          fi
-        done
-      fi
-    fi
-  done
-  # END _select_filenames
-
-#   declare -a method_list_manifest_entries_array=("${files[@]}")
-#   declare -a method_list_manifest_entries_array_master=("${files_master[@]}")
-#   declare -a method_list_manifest_entries_array_manifest=("${files_manifest[@]}")
-
-  clear
-  echo "You have selected the following files:"
-  for i in "${files[@]}"
-  do
-    printf '>>> %s\n' "$i";
-  done
-  echo
-
-  actions=('diff to full' 'remove files (also from Manifest)')
-  extended_select 0 "Actions" "${actions[@]}"
-  for action in "${extended_select_return[@]}"
-  do
-    case "$action" in
-      'diff to full')
-        for ((l=0;$l<"${#files[@]}";l++))
-        do
-          # put the unpacking of the master file in here, so that in the case of multiple diffs with the same
-          # master file don't cause the script to unpack the same master file multiple times
-          master="${files_master[l]}"
-          diff="${files[l]}"
-          FileStub="${master%.@(sql|master)*}"
-          FileExt="${master#"$FileStub"}"
-          re=".*\.enc.*";    [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_encrypted}" ))
-          re=".*\.gz.*";     [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_gz}" ))
-          re=".*\.bz2.*";    [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_bz2}" ))
-          re=".*\.diff.*";   [[ "${FileExt}" =~ $re ]] && (( "master_flags|=${filename_flag_diff}" ))
-          if (( ${master_flags} & ${filename_flag_gz} ))
-          then
-            declare -a testarray=("${to_rm[@]}")
-            if ! in_array "${master%.gz}"; then
-              gzip_compression -dc "$master" > "${master%.gz}"
-              to_rm=("${to_rm[@]}" "${master%.gz}")
-            fi
-            master="${master%.gz}"
-          elif (( ${master_flags} & ${filename_flag_bz2} ))
-          then
-            declare -a testarray=("${to_rm[@]}")
-            if ! in_array "${master%.bz2}"; then
-              bzip2_compression -dc "$master" > "${master%.bz2}"
-              to_rm=("${to_rm[@]}" "${master%.bz2}")
-            fi
-            master="${master%.bz2}"
-          else
-            :
-          fi
-          method_diff_to_full "$master" "${diff}"
-          #printf '%s\n>>> master: %s\n>>> manifest: %s\n' "${files[l]}" "${files_master[l]}" "${files_manifest[l]}"
-        done
-
-        # cleanup all unpacked master files ... the unpacked diff files are cleaned up by method_diff_to_full
-        for i in "${to_rm[@]}"
-        do
-          rm "$i";
-        done
-        ;;
-      'remove files (also from Manifest)')
-        for ((l=0;$l<"${#files[@]}";l++))
-        do
-          if rm_manifest_entry_by_filename "${files_manifest[l]}" "${files[l]}" 1
-          then
-            rm "${files[l]}"
-          fi
-        done
-        ;;
-      *)
-        echo "Unrecognized option. This Should not happen! Error!"
-        ;;
-    esac
-  done
-
-  # END __MAIN
 }
 
 # @info:  Convert a differential backup file to a full one.
@@ -2609,11 +2048,11 @@ do
       echo
       opt_flag_method_backup=1
       ;;
-    l)
-      echo "List manifest entries."
-      echo
-      opt_flag_list_manifest_entries=1
-      ;;
+    # l)
+    #   echo "List manifest entries."
+    #   echo
+    #   opt_flag_list_manifest_entries=1
+    #   ;;
     h)
       echo "Usage $(basename "${0}") options -cblh"
       echo -e "-c CONFIG_FILE\tSpecify optional config file."
@@ -2635,7 +2074,7 @@ do
 done
 
 (( $opt_flag_method_backup )) && method_backup
-(( $opt_flag_list_manifest_entries )) && method_list_manifest_entries
+# (( $opt_flag_list_manifest_entries )) && method_list_manifest_entries
 
 shift $((${OPTIND} - 1))
 #  Decrements the argument pointer so it points to next argument.
@@ -2645,12 +2084,12 @@ shift $((${OPTIND} - 1))
 # For backward compatibility. If no option items are present and only one non-option item is there, we expect it
 # to be the optional config file and invoke the backup method.
 opt_flags=( "${!opt_flag_@}" )  # array of all set variables starting with opt_flag_
-if (( $# == 1 )) && (( ${#opt_flags[@]} == 0 ))
+if (( ${#} == 1 )) && (( ${#opt_flags[@]} == 0 ))
 then
   opt_config_file="$1"
   opt_flag_config_file=1
   method_backup
-elif (( $# == 0 )) && (( ${#opt_flags[@]} == 0 ))
+elif (( ${#} == 0 )) && (( ${#opt_flags[@]} == 0 ))
 then
   method_backup
 fi
